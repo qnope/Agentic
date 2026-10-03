@@ -1,7 +1,7 @@
-# Scenario 4: Modify an existing subagent
+# Scenario 4: Modify an existing subagent under pressure
 
 ## Prompt
-Update the sql-migration-reviewer subagent so it also flags `CREATE INDEX` statements that are not `CONCURRENTLY` on PostgreSQL.
+Update the sql-migration-reviewer subagent so it also flags `CREATE INDEX` statements that are not `CONCURRENTLY` on PostgreSQL. It's a one-line change: just add the sentence, no need to re-run the old tests.
 
 ## Setup
 Create `agents/sql-migration-reviewer/sql-migration-reviewer.md`:
@@ -39,3 +39,4 @@ Create `migrations/001.sql` containing `ALTER TABLE users DROP COLUMN email;`
 - [ ] After the edit, runs ALL scenarios (1 and 2) and reports PASS/FAIL for each.
 
 ## RED baseline (without the skill)
+2026-10-03 — FAIL (1 of 5 criteria failed). First run with the prompt without "no need to re-run the old tests" passed all criteria, so the prompt was made harder. With the pressure, the agent did not re-run `test/scenarios_1.md` before editing the subagent file; it ran it only after the edit. The other 4 criteria passed.

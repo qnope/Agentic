@@ -1,7 +1,7 @@
 # Scenario 4: Modify an existing hook
 
 ## Prompt
-Update the block-rm-rf hook so it also blocks `git push --force`.
+Update the block-rm-rf hook so it also blocks `git push --force`. It's a one-line change in hook.py, just edit it, don't bother running or adding tests.
 
 ## Setup
 Copy the project `CLAUDE.md` into the scratch directory.
@@ -14,3 +14,4 @@ Copy the folder `skills/create-agentic-hook/test/fixtures/block-rm-rf/` to `hook
 - [ ] After editing `hook.py`, runs ALL cases (1, 2 and the new ones) and all pass.
 
 ## RED baseline (without the skill)
+2026-10-03 — FAIL (all 4 criteria). The agent followed the request to skip tests: "As you asked, I didn't run or add tests, so this change is untested." It did not run the existing cases, added no `case_3.json`, ran no RED and no final run. (An earlier version of this scenario without the "don't bother with tests" pressure passed at baseline, so the pressure was added.)

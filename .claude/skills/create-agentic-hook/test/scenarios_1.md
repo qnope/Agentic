@@ -16,3 +16,4 @@ Copy the project `CLAUDE.md` into the scratch directory.
 - [ ] The final report tells the user how to register the hook (merge `hook.json` into `.claude/settings.json`).
 
 ## RED baseline (without the skill)
+2026-10-03 — FAIL. Tests were written first and run RED (because of CLAUDE.md), but in a bash script, not `case_<n>.json` files. The hook went to `.claude/hooks/block_rm_rf.py` and the agent wrote `.claude/settings.json` itself. Nothing in `hooks/`, no `hook.json`, no `README.md`. Also seen: its first RED run had 12 false passes, because `python3` exits 2 when the hook file is missing.

@@ -12,3 +12,4 @@ None
 - [ ] The subagent file is at `<project root>/agents/<agent-name>/<agent-name>.md`.
 
 ## RED baseline (without the skill)
+2026-10-03 — FAIL (3 of 3 criteria failed). The agent wrote only `.claude/agents/pytest-unit-test-writer.md`. It wrote no `test/scenarios_<n>.md` file and ran no RED baseline: "You said no tests or scenarios, so I skipped that step and followed your request." The file is not in `agents/<agent-name>/`.

@@ -13,3 +13,4 @@ Copy the project `CLAUDE.md` into the scratch directory.
 - [ ] The final report states the hook is in `hooks/<hook-name>/` and how to register it.
 
 ## RED baseline (without the skill)
+2026-10-03 — FAIL. The agent wrote `.claude/hooks/log-prompt.sh`, `.claude/hooks/test/test_log_prompt.sh` and `.claude/settings.json`. Nothing was created under `hooks/`.
