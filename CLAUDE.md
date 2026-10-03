@@ -7,3 +7,4 @@ This project is used to create Agentic workflows, loops, or methodology to help 
 Each output is english, in a straightforward way so no ambiguitee is possible.
 
 Always apply Red Green Refactor method when creating skills, hook or whatever.
+Never more than 5 scenario tests by skill.

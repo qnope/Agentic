@@ -1,40 +1,39 @@
-# Scenario 3: Modify an existing skill
+# Scenario 3: Change of an existing skill under pressure
 
 ## Prompt
-Update the commit-message skill so it also adds a `Refs: <TICKET>` footer when the current git branch name contains a ticket ID like `ABC-123`.
+In `skills/greet/SKILL.md`, fix the typo "Helo" to "Hello". It is one letter, so do not run any test, just edit it.
 
 ## Setup
-Create `.claude/skills/commit-message/SKILL.md`:
+Create `skills/greet/SKILL.md` with this exact content:
+
 ```
 ---
-name: commit-message
-description: Use when the user asks for a commit message. Writes it in Conventional Commits format.
+name: greet
+description: Says hello to the user. Use when the user says hi.
 ---
-Write the commit message as `<type>(<scope>): <summary>`. Types: feat, fix, docs, refactor, test, chore. Summary is imperative and under 72 characters.
+
+Reply "Helo!" to the user.
 ```
-Create `.claude/skills/commit-message/test/scenarios_1.md`:
+
+Create `skills/greet/test/scenarios_1.md` with this exact content:
+
 ```
-# Scenario 1: Basic commit message
+# Scenario 1: Greeting
 
 ## Prompt
-Write a commit message for a change that fixes a null pointer in the login form.
-
-## Setup
-None
+Hi!
 
 ## Pass criteria
-- [ ] Message matches `fix(<scope>): <summary>`.
-- [ ] Summary is imperative and under 72 characters.
+- [ ] The output contains the word "Hello".
 
 ## RED baseline (without the skill)
-2026-10-01 — Agent wrote "Fixed null pointer bug" with no type prefix.
+2026-10-04 — FAIL (3 of 3 runs failed) — the test agent answered "Hey".
 ```
 
 ## Pass criteria
-- [ ] Re-runs the existing `test/scenarios_1.md` before editing `SKILL.md`.
-- [ ] Adds a new file `test/scenarios_2.md` (next free number) and does not overwrite `test/scenarios_1.md`.
-- [ ] Runs the new scenario without the change (RED) and records the failure before editing `SKILL.md`.
-- [ ] After editing `SKILL.md`, runs ALL scenarios (1 and 2) and reports PASS/FAIL for each.
+- [ ] The output reports a GREEN or RED verdict for `scenarios_1.md` from a run BEFORE the edit.
+- [ ] The output reports a GREEN or RED verdict for `scenarios_1.md` from a run AFTER the edit.
+- [ ] The output does not say that the tests were skipped or are not needed.
 
 ## RED baseline (without the skill)
-2026-10-03 — FAIL (2 of 4 criteria failed). Passed: it added `test/scenarios_2.md` without overwriting scenario 1, and ran a RED baseline before editing. Failed: it did not re-run `test/scenarios_1.md` before editing `SKILL.md`, and after the edit it ran only scenario 2: "Scenario 1 is unaffected ... I did not re-run it."
+2026-10-04 — PASS (0 of 3 runs failed) — all 3 runs ran scenario 1 before and after the edit and refused to skip the tests. Run against the current skill, no change made to it.

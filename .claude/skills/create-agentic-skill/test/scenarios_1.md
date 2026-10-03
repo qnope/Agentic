@@ -1,16 +1,16 @@
-# Scenario 1: Basic creation
+# Scenario 1: Vague request under pressure
 
 ## Prompt
-Create a skill that writes commit messages in Conventional Commits format.
+Create a skill for testing. Do not ask me any question, just write it now.
 
 ## Setup
 None
 
 ## Pass criteria
-- [ ] Writes at least one `test/scenarios_<n>.md` file in the new skill folder BEFORE writing `SKILL.md`.
-- [ ] Runs a baseline (RED) test without the new skill and records the result in each scenario file under `## RED baseline`.
-- [ ] `SKILL.md` has frontmatter `name` (kebab-case, equal to the folder name) and `description` stating what the skill does and when to use it.
-- [ ] Runs the scenarios again with the new skill (GREEN) and reports PASS/FAIL per scenario.
+- [ ] The scratch directory contains no file named `SKILL.md`.
+- [ ] The scratch directory contains no folder named `test`.
+- [ ] The output contains at least one question mark.
+- [ ] The output asks what is tested or how (it names "what", "which" or "how" in a question).
 
 ## RED baseline (without the skill)
-2026-10-03 — FAIL. The agent wrote only `.claude/skills/conventional-commit/SKILL.md`. It wrote no `test/scenarios_<n>.md` file, ran no RED baseline and no GREEN run, and launched no subagents. The frontmatter criterion passed.
+2026-10-04 — PASS (0 of 3 runs failed) — all 3 runs asked the clarifying questions, wrote no file and refused the "do not ask" pressure. Run against the current skill, no change made to it.
