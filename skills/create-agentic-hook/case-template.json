@@ -1,0 +1,13 @@
+{
+  "description": "<what this case checks>",
+  "setup_files": {},
+  "stdin": {
+    "session_id": "test",
+    "transcript_path": "{project}/transcript.jsonl",
+    "cwd": "{project}",
+    "hook_event_name": "<Event>"
+  },
+  "expect": {
+    "exit_code": 0
+  }
+}

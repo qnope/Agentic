@@ -1,0 +1,5 @@
+{
+  "description": "allows ls -la",
+  "stdin": {"session_id": "test", "cwd": "{project}", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls -la"}},
+  "expect": {"exit_code": 0}
+}

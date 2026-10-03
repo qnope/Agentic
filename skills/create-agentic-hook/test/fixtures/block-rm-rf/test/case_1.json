@@ -1,0 +1,5 @@
+{
+  "description": "blocks rm -rf",
+  "stdin": {"session_id": "test", "cwd": "{project}", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "rm -rf /tmp/x"}},
+  "expect": {"exit_code": 2, "stderr_contains": "rm -rf"}
+}
