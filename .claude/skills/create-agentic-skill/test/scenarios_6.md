@@ -36,3 +36,4 @@ None
 - [ ] After editing `SKILL.md`, the agent runs ALL scenarios, including that one, and reports PASS/FAIL for each.
 
 ## RED baseline (without the skill)
+2026-10-03 — PASS (2 of 2 runs) with the skill as it was. Kept as a regression check: it guards that negative checks are kept and run.

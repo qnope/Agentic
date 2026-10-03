@@ -1,14 +1,14 @@
 # Scenario <n>: <short title>
 
 ## Prompt
-<exact user message given to the test subagent>
+<exact user message given to the test agent>
 
 ## Setup
-<files or state to create in the scratch directory before the run, or "None">
+<files or state to create in the scratch directory before the run, with exact contents, or "None">
 
 ## Pass criteria
-- [ ] <observable behavior 1>
-- [ ] <observable behavior 2>
+- [ ] <yes/no check on the output text or the files>
+- [ ] <yes/no check on the output text or the files>
 
 ## RED baseline (without the skill)
-<date> — <what the subagent did wrong, quoted or summarized>
+<date> — <FAIL or PASS> (<k> of 3 runs failed) — <what the test agent did wrong, quoted or summarized>
