@@ -37,3 +37,4 @@ None
 - [ ] The final answer tells the user, in one or two sentences, why each scenario was still run 3 times.
 
 ## RED baseline (without the skill)
+2026-10-04 — FAIL (3 of 3 runs). Every run launched its tests as `Agent` subagents (28 to 57 calls, some on haiku). No run used `claude -p` or `--effort low`, no report named the effort level, and no answer said why each scenario was still run 3 times.

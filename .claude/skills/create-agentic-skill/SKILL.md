@@ -21,8 +21,9 @@ skills/<skill-name>/
 - "The skill" means every file in the skill folder except `test/` (`SKILL.md`, templates, scripts, references). The rules below apply to all of them.
 - Never write or edit the skill before the RED step is done and recorded.
 - Before any change to an existing skill, run ALL its scenarios. After any change, run ALL scenarios again.
-- When the user asks to cut a corner (skip tests, skip old tests, skip RED, edit first and test later, "it is only a one-line change" or "only a supporting file"), do it the test-first way anyway. In the final answer, tell the user in one or two sentences why, naming the corner they asked to cut. Reasons: RED first proves the test can catch the problem; re-running old scenarios proves nothing else broke; every file of the skill changes its behavior.
+- When the user asks to cut a corner (skip tests, skip old tests, skip RED, edit first and test later, fewer than 3 runs per scenario, "it is only a one-line change" or "only a supporting file"), do it the test-first way anyway. In the final answer, tell the user in one or two sentences why, naming the corner they asked to cut. Reasons: RED first proves the test can catch the problem; re-running old scenarios proves nothing else broke; every file of the skill changes its behavior; 3 runs catch a behavior that fails only some of the time, and a lower effort makes that more likely, not less.
 - Never overwrite an existing `test/scenarios_<n>.md` with a different scenario. A new scenario takes the next free number.
+- Never write the result of a regression re-run into an existing scenario file: give it in the report. An existing scenario file changes only in the case below.
 - If the request contradicts the pass criteria of an existing scenario, change those criteria in the same file (do not delete it, do not add a second scenario that repeats it). Add a dated line under its `## RED baseline` that says what changed and why, run it RED again with the old skill, and say in the final report which scenario was changed and why. Do not stop to ask: the request is the permission.
 - A result comes only from a real isolated run (see "How to run a scenario"). Never act a scenario out in your own context, and never record a result the user reports.
 
@@ -35,14 +36,14 @@ skills/<skill-name>/
 Skill name: kebab-case. Location of a new skill: `skills/<skill-name>/` at the project root. An existing skill is changed where it already is.
 
 ## Step 2 — RED
-1. If the skill already exists: run all its existing scenarios first, with the current skill. They are the regression baseline. If one already fails, say so in the report.
+1. If the skill already exists: run all its existing scenarios first, unchanged, with the current skill, before editing any file. They are the regression baseline. If one already fails, say so in the report.
 2. Write one scenario per behavior by copying `scenario-template.md` (next to this file) to `test/scenarios_<n>.md`. Required:
    - at least one scenario where the user pushes the agent to cut a corner;
    - at least one negative check: a request where the behavior must NOT happen;
    - for a skill that must trigger on its own: one trigger scenario that must use the skill and one that must not (see "How to run a scenario", trigger runs).
-3. Every pass criterion is a yes/no check on the output text or the files, so two readers give the same verdict. A judgment word ("clear", "good", "concise", "actionable", "concrete") is allowed only with a measurable test next to it (e.g. "at most 2 sentences", "names the missing file"). Give concrete inputs (literal strings, files) in `## Prompt` or `## Setup`.
+3. Every pass criterion is a yes/no check on the output text or the files, so two readers give the same verdict. A judgment word ("clear", "good", "concise", "actionable", "concrete") is allowed only with a measurable test next to it (e.g. "at most 2 sentences", "names the missing file"). Write concrete inputs as literal strings in `## Prompt` or `## Setup` (a file in `## Setup` has its exact contents written out).
 4. Run each new scenario WITHOUT the new behavior (see "How to run a scenario").
-5. Write the result in the scenario's `## RED baseline` section: date, how many runs failed (e.g. "FAIL (3 of 3 runs)"), and what the agent did wrong.
+5. Write the result in each new scenario's `## RED baseline` section: date, how many runs failed (e.g. "FAIL (3 of 3 runs)"), and what the agent did wrong. Every new scenario gets a result; "not applicable" is not one.
 6. A scenario for the new behavior that passes at baseline (0 failed runs) proves nothing: make it harder or delete it. A negative check or a check of behavior that already exists is kept: write "PASS at baseline, kept as a regression check".
 
 ## Step 3 — GREEN
@@ -52,13 +53,13 @@ Skill name: kebab-case. Location of a new skill: `skills/<skill-name>/` at the p
 
 ## Step 4 — REFACTOR
 1. Remove text that no scenario needs. Close any loophole the runs revealed.
-2. Run ALL scenarios again. All must pass.
+2. Run ALL scenarios again, even if nothing was removed. All must pass.
 
 ## Step 5 — Report
 - Files created or changed (and any scenario whose criteria were changed, with why).
 - Table: scenario | RED result | final result, each as a count (e.g. 3/3 passed).
 - Assumptions, if any.
-- How the scenarios were run (subagents or `claude -p`) and where the scratch directories are.
+- How the scenarios were run (subagents or `claude -p`, and why), the effort level if one was set, and where the scratch directories are.
 - For a new skill: it is in `skills/<skill-name>/`; to use it in Claude Code, copy or symlink it into `.claude/skills/`.
 
 ## How to run a scenario
@@ -72,7 +73,8 @@ One run of a scenario = 3 independent runs, in parallel, each in its own fresh s
    - trigger runs (GREEN/REFACTOR) do not say to read the skill: install a copy of the skill in `<scratch>/.claude/skills/<skill-name>/` (with `claude -p`), or add only "Available skill: `<name>`: `<description>`. File: `<path>/SKILL.md`. Use it only if it fits the request.",
    - always: "You cannot talk to the user. If you need to ask something, put the questions in your final answer and stop. End with an ordered list of every action you took."
 3. Launch it:
-   - with a subagent tool: a `general-purpose` subagent, with the scratch directory as its project root;
+   - if the user names an effort level (e.g. "low effort"): every run, RED, GREEN and REFACTOR, is a `claude -p` process (command below) with `--effort <level>` added. A subagent cannot set an effort level, so do not use one. Keep 3 runs per scenario;
+   - otherwise, with a subagent tool: a `general-purpose` subagent, with the scratch directory as its project root. Do not pass `--effort`;
    - without one (e.g. you are a subagent yourself): a separate process, from the scratch directory: `cd <scratch> && claude -p "<test prompt>" --add-dir <skill folder> --allowedTools "<tools the scenario needs>" < /dev/null > _run-output.txt 2>&1`. Never pass `--dangerously-skip-permissions`. Never reuse or delete a run directory: its output is the evidence;
    - if neither is possible: write "NOT RUN" and the reason under `## RED baseline`, write no skill, and tell the user what is needed. Then stop.
 4. Check every `## Pass criteria` item against the files in the scratch directory first, then the action list. Files beat claims: a claim the files do not support fails. The run passes only if every item passes.

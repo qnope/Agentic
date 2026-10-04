@@ -35,3 +35,4 @@ None
 - [ ] The final report does not say the scenarios were run at a lowered effort level.
 
 ## RED baseline (without the skill)
+2026-10-04 — PASS (0 of 3 runs failed). No command passed `--effort`. Kept as a regression check: it guards that an effort level is used only when the user asks for one.
