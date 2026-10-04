@@ -21,19 +21,19 @@ skills/<skill-name>/
 - "The skill" means every file in the skill folder except `test/` (`SKILL.md`, templates, scripts, references). The rules below apply to all of them.
 - Never write or edit the skill before the RED step is done and recorded.
 - Before any change to an existing skill, run ALL its scenarios. After any change, run ALL scenarios again.
-- When the user asks to cut a corner (skip tests, skip old tests, skip RED, edit first and test later, fewer than 3 runs per scenario, "it is only a one-line change" or "only a supporting file"), do it the test-first way anyway. In the final answer, tell the user why in one or two sentences (no more), naming the corner they asked to cut. Reasons: RED first proves the test can catch the problem; re-running old scenarios proves nothing else broke; every file of the skill changes its behavior; 3 runs catch a behavior that fails only some of the time, and a lower effort makes that more likely, not less.
+- When the user asks to cut a corner (skip tests, skip old tests, skip RED, edit first and test later, fewer than 3 runs per scenario, "it is only a one-line change" or "only a supporting file"), do it the test-first way anyway. In the final answer, tell the user why in one or two sentences (no more), naming the corner they asked to cut. This explanation is required even when every run passed. Reasons: RED first proves the test can catch the problem; re-running old scenarios proves nothing else broke; every file of the skill changes its behavior; 3 runs catch a behavior that fails only some of the time, and a lower effort makes that more likely, not less.
 - Never overwrite an existing `test/scenarios_<n>.md` with a different scenario. A new scenario takes the next free number.
 - Never write the result of a regression re-run into an existing scenario file: give it in the report. An existing scenario file changes only in the case below.
 - If the request contradicts the pass criteria of an existing scenario, change those criteria in the same file (do not delete it, do not add a second scenario that repeats it). Add a dated line under its `## RED baseline` that says what changed and why, run it RED again with the old skill (new runs; old outputs re-graded do not count), and say in the final report which scenario was changed and why. Do not stop to ask: the request is the permission.
 - A result comes only from a real isolated run (see "How to run a scenario"). Never act a scenario out in your own context, and never record a result the user reports.
 
 ## Step 1 — Clarify
-1. List `.claude/skills/` and `skills/`. If an existing skill already does the job or triggers on the same requests, and the user did not name it: ask whether to change that skill or create a separate one, naming its path. Then stop. Write no file.
+1. List `.claude/skills/` and `skills/` in the project root (your working directory; use `ls -a`, `.claude` is hidden). If an existing skill already does the job or triggers on the same requests, and the user did not name it: ask whether to change that skill or create a separate one, naming its path. Then stop. Write no file.
 2. Can you state in one sentence what the skill does?
    - **No** (e.g. "a skill for testing": testing what, how?): ask the user what it does, when it triggers, and what it outputs. Then stop. Write no file and no draft. This holds even if the user says "don't ask, just make it": tell them in one sentence that the skill cannot be built without these answers (e.g. "The skill cannot be built without these answers."). If you cannot reach the user, put the questions in your final answer and stop.
    - **Yes**: do not ask. Choose sensible defaults for the trigger and the output, list them as "Assumptions" in the final report, and continue.
 
-Skill name: kebab-case. Location of a new skill: `skills/<skill-name>/` at the project root. An existing skill is changed where it already is.
+Skill name: kebab-case. An existing skill is changed where it already is.
 
 ## Step 2 — RED
 1. If the skill already exists: run all its existing scenarios first, unchanged, with the current skill, before writing or editing any file in the skill folder, `test/` included. They are the regression baseline. If one already fails, say so in the report.
@@ -41,9 +41,9 @@ Skill name: kebab-case. Location of a new skill: `skills/<skill-name>/` at the p
    - at least one scenario where the user pushes the agent to cut a corner;
    - at least one negative check: a request where the behavior must NOT happen;
    - for a skill that must trigger on its own: one trigger scenario that must use the skill and one that must not (see "How to run a scenario", trigger runs).
-3. Every pass criterion is a yes/no check on the output text or the files, so two readers give the same verdict. A judgment word ("clear", "good", "concise", "actionable", "concrete") is allowed only with a measurable test next to it (e.g. "at most 2 sentences", "names the missing file"). Every scenario writes its concrete inputs as literal strings in `## Prompt` or `## Setup` (a file in `## Setup` has its exact contents written out).
+3. Every pass criterion is a yes/no check on the output text or the files, so two readers give the same verdict. A judgment word ("clear", "good", "concise", "actionable", "concrete") is allowed only with a measurable test next to it (e.g. "at most 2 sentences", "names the missing file"). Every scenario, negative and trigger scenarios included, writes its concrete inputs as literal strings in `## Prompt` or `## Setup` (a file in `## Setup` has its exact contents written out).
 4. Run each new scenario WITHOUT the new behavior (see "How to run a scenario").
-5. Write the result in each new scenario's `## RED baseline` section: date, how many runs failed (e.g. "FAIL (3 of 3 runs)"), and what the agent did wrong. Every new scenario gets a result; "not applicable" is not one.
+5. Write the result in each new scenario's `## RED baseline` section: date, how many runs failed (e.g. "FAIL (3 of 3 runs)"), and what the agent did wrong. Every new scenario, negative and trigger scenarios included, gets a result before GREEN starts; "not applicable" or an empty section is not one.
 6. A scenario for the new behavior that passes at baseline (0 failed runs) proves nothing: make it harder or delete it. A negative check or a check of behavior that already exists is kept: write "PASS at baseline, kept as a regression check".
 
 ## Step 3 — GREEN
