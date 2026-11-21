@@ -85,6 +85,7 @@ class NextTest(Base):
         self.assertEqual([t["id"] for t in result["ready"]], ["T1", "T2"])
         self.assertEqual(result["ready"][0]["path"], "specs/login/tasks/T1.md")
         self.assertEqual((result["waiting"], result["finished"]), (["T3"], False))
+        self.assertEqual(result["test_command"], "run-tests")
 
     def test_dependent_task_becomes_ready_and_feature_finishes(self):
         self.create()

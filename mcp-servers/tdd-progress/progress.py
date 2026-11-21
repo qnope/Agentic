@@ -119,7 +119,8 @@ def _view(feature, task):
 def next_tasks(root, feature):
     """Say what to work on: `ready` lists the new tasks whose dependencies are all done."""
     data = _load(root, feature)
-    result = {"feature": feature, "ready": [], "dev": [], "review": [], "escalated": [], "waiting": []}
+    result = {"feature": feature, "test_command": data["test_command"],
+              "ready": [], "dev": [], "review": [], "escalated": [], "waiting": []}
     for task in data["tasks"]:
         if task["status"] == "new":
             if _unfinished_dependencies(data, task):

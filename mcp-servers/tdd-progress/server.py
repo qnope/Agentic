@@ -55,6 +55,7 @@ def progress_next(feature: str) -> dict:
     ready: new tasks whose dependencies are all done. dev, review: tasks in progress.
     escalated: tasks rejected 3 times, the human partner decides. waiting: ids of new
     tasks with an unfinished dependency. finished: true when every task is done.
+    test_command: the command that runs all the tests.
     """
     return call(progress.next_tasks, feature)
 

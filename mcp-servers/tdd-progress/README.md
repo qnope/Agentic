@@ -49,7 +49,7 @@ specs/<feature>/
 | Tool | Does |
 |---|---|
 | `progress_create(feature, test_command, tasks)` | Creates `progress.json`, every task `new`. |
-| `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev` and `review`, the `escalated` and `waiting` ones, and `finished`. |
+| `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev` and `review`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
 | `progress_update(feature, task_id, status, note)` | Moves one task to its next status. |
 | `progress_status(feature)` | Counts the tasks per status. With no name: every feature. |
 
