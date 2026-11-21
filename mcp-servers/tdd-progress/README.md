@@ -124,10 +124,10 @@ Run these commands from the root of your project. `A` is the path of this reposi
 
 ```
 A=/path/to/Agentic
-$A/install_claude.py workflow/tdd-loop
+$A/install_claude.py workflow/tdd-loop workflow/tdd-bugfix
 ```
 
-The script copies the three skills, the three agents, the stop hook and this server into the project, and registers the server and the hook in the config files of the tool. It also creates the Python environment `mcp-servers/tdd-progress/.venv`, installs `requirements.txt` in it, and makes the tool start the server with it. The file `README.md` at the root of this repository gives the details.
+`workflow/tdd-loop` is the way of a feature, `workflow/tdd-bugfix` is the short way of a bug: install one or both. The script copies their skills, the three agents, the stop hook and this server into the project, and registers the server and the hook in the config files of the tool. It also creates the Python environment `mcp-servers/tdd-progress/.venv`, installs `requirements.txt` in it, and makes the tool start the server with it. The file `README.md` at the root of this repository gives the details.
 
 Start the tool in the project. Accept the MCP server `tdd-progress` and the hook when it asks. Then:
 
@@ -135,3 +135,4 @@ Start the tool in the project. Accept the MCP server `tdd-progress` and the hook
 2. Read `specs/<feature>/spec.md` and say that you approve it. The plan and the development follow with no other pause.
 3. To continue a feature in a later session, write `Continue the feature <feature>`.
 4. To see where every feature is, write `Show the progress`, or run `python3 mcp-servers/tdd-progress/progress.py status` in a terminal.
+5. To fix a bug, write `/tdd-bugfix <the input, the result you get, the result you expect>`. A test that fails proves the bug first. Then the fix is developed, reviewed and really tested as the one task of the feature `fix-<name>`, with no spec to approve and no plan.
