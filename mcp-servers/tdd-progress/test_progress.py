@@ -186,16 +186,52 @@ class StatusTest(Base):
     def test_counts_and_remaining(self):
         self.create()
         self.finish("T1")
-        self.move("T2", "dev")
+        self.move("T2", "dev", "review", "dev", note="No test for the empty string.")
         result = progress.status(self.root, "login")
         self.assertEqual(result["counts"], {"new": 1, "dev": 1, "review": 0, "real-testing": 0, "done": 1})
         self.assertEqual((result["remaining"], result["finished"], result["status"]), (["T2", "T3"], False, "open"))
         self.assertEqual(result["tasks"], {"T1": "done", "T2": "dev", "T3": "new"})
+        self.assertEqual(result["rejections"], {"T1": 0, "T2": 1, "T3": 0})
 
     def test_lists_every_feature(self):
         self.create()
         self.create(feature="signup", tasks=TASKS[:1])
         self.assertEqual([s["feature"] for s in progress.status(self.root)], ["login", "signup"])
+
+
+class DashboardTest(Base):
+    def test_shows_every_feature_and_task_with_status_and_rejections(self):
+        self.create()
+        self.create(feature="signup", tasks=TASKS[:1])
+        self.finish("T1")
+        self.move("T2", "dev", "review", "dev", note="No test for the empty string.")
+        self.assertEqual(progress.dashboard(self.root).splitlines(), [
+            "login (open): 1 of 3 tasks done",
+            "  TASK  STATUS  REJECTIONS  TITLE",
+            "  T1    done    0           Reject an empty password",
+            "  T2    dev     1           Hash the password",
+            "  T3    new     0           Lock after 3 failures",
+            "",
+            "signup (open): 0 of 1 tasks done",
+            "  TASK  STATUS  REJECTIONS  TITLE",
+            "  T1    new     0           Reject an empty password",
+        ])
+
+    def test_shows_one_feature_and_marks_a_task_rejected_3_times(self):
+        self.create()
+        self.create(feature="signup", tasks=TASKS[:1])
+        self.move("T1", "dev", "review", "dev", "review", "dev", "review", "dev", note="Wrong.")
+        lines = progress.dashboard(self.root, "login").splitlines()
+        self.assertEqual(lines[:3], [
+            "login (open): 0 of 3 tasks done",
+            "  TASK  STATUS          REJECTIONS  TITLE",
+            "  T1    dev, escalated  3           Reject an empty password",
+        ])
+        self.assertEqual(len(lines), 5)
+
+    def test_says_when_there_is_no_feature_and_refuses_an_unknown_one(self):
+        self.assertEqual(progress.dashboard(self.root), "No feature: specs/ holds no progress.json.")
+        self.refused("no progress file", progress.dashboard, self.root, "login")
 
 
 class VerifyTest(Base):
@@ -255,8 +291,18 @@ class CommandLineTest(Base):
         self.assertEqual((code, json.loads(out)["status"]), (0, "dev"))
         code, out, _ = self.run_cli("next", "login")
         self.assertEqual([t["id"] for t in json.loads(out)["ready"]], ["T2"])
-        code, out, _ = self.run_cli("status", "login")
+        code, out, _ = self.run_cli("status", "login", "--json")
         self.assertEqual(json.loads(out)["remaining"], ["T1", "T2", "T3"])
+
+    def test_status_prints_the_dashboard(self):
+        self.run_cli("create", "login", "--test-command", "true", stdin=json.dumps(TASKS[:1]))
+        for arguments in (("status",), ("status", "login")):
+            code, out, _ = self.run_cli(*arguments)
+            self.assertEqual((code, out), (0, "login (open): 0 of 1 tasks done\n"
+                                              "  TASK  STATUS  REJECTIONS  TITLE\n"
+                                              "  T1    new     0           Reject an empty password\n"))
+        code, out, _ = self.run_cli("status", "--json")
+        self.assertEqual((code, json.loads(out)[0]["rejections"]), (0, {"T1": 0}))
 
     def test_error_goes_to_stderr_with_exit_code_1(self):
         code, out, err = self.run_cli("update", "login", "T1", "dev")

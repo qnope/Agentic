@@ -184,7 +184,24 @@ def status(root, feature=None):
     remaining = [t["id"] for t in data["tasks"] if t["status"] != "done"]
     return {"feature": feature, "status": data["status"], "counts": counts,
             "tasks": {t["id"]: t["status"] for t in data["tasks"]},
+            "rejections": {t["id"]: t["rejections"] for t in data["tasks"]},
             "remaining": remaining, "finished": not remaining}
+
+
+def dashboard(root, feature=None):
+    """Give the text to show to a human: one block per feature, one line per task."""
+    blocks = []
+    for name in [feature] if feature else [summary["feature"] for summary in status(root)]:
+        data = _load(root, name)
+        rows = [("TASK", "STATUS", "REJECTIONS", "TITLE")] + [
+            (t["id"], t["status"] + ", escalated" * _escalated(t), str(t["rejections"]), t["title"])
+            for t in data["tasks"]]
+        widths = [max(len(row[column]) for row in rows) for column in range(3)] + [0]
+        done = sum(t["status"] == "done" for t in data["tasks"])
+        lines = [f"{name} ({data['status']}): {done} of {len(data['tasks'])} tasks done"]
+        lines += ["  " + "  ".join(cell.ljust(width) for cell, width in zip(row, widths)) for row in rows]
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) or "No feature: specs/ holds no progress.json."
 
 
 def verify(root):
@@ -227,7 +244,9 @@ def main(argv=None):
     move.add_argument("status", choices=list(NEXT))
     move.add_argument("--note", default="")
     commands.add_parser("next", help="list the tasks to work on").add_argument("feature")
-    commands.add_parser("status", help="summarize one or every feature").add_argument("feature", nargs="?")
+    show = commands.add_parser("status", help="show the dashboard of one or every feature: its tasks and their status")
+    show.add_argument("feature", nargs="?")
+    show.add_argument("--json", action="store_true", help="print the summary as JSON instead of the dashboard")
     commands.add_parser("verify", help="exit 1 while a started feature has unfinished tasks or failing tests")
     args = parser.parse_args(argv)
     try:
@@ -242,8 +261,11 @@ def main(argv=None):
             result = update(args.root, args.feature, args.task, args.status, args.note)
         elif args.command == "next":
             result = next_tasks(args.root, args.feature)
-        else:
+        elif args.json:
             result = status(args.root, args.feature)
+        else:
+            print(dashboard(args.root, args.feature))
+            return 0
     except (ProgressError, ValueError, OSError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

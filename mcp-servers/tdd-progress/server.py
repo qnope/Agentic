@@ -79,11 +79,15 @@ def progress_update(feature: str, task_id: str, status: Literal["dev", "review",
 
 @server.tool()
 def progress_status(feature: str = "") -> dict:
-    """Count the tasks per status, give the status of each task and list the remaining ones.
+    """Show the progress: the tasks of each feature, with their status and their number of rejections.
 
     With a feature name: that feature. With no name: every feature, under the key features.
+    A feature has counts (tasks per status), tasks (status of each task), rejections (times
+    each task was sent back to dev), remaining and finished. dashboard: the same as text.
+    When the human partner asks for the progress, show dashboard as it is.
     """
-    return call(progress.status, feature) if feature else {"features": call(progress.status)}
+    summary = call(progress.status, feature) if feature else {"features": call(progress.status)}
+    return {**summary, "dashboard": call(progress.dashboard, feature or None)}
 
 
 if __name__ == "__main__":

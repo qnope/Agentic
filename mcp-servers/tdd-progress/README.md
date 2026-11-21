@@ -56,7 +56,7 @@ specs/<feature>/
 | `progress_create(feature, test_command, tasks)` | Creates `progress.json`, every task `new`. |
 | `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev`, `review` and `real-testing`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
 | `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the output of the reviewer or of the real tester: required for `real-testing`, for `done` and for a rejection. |
-| `progress_status(feature)` | Counts the tasks per status and gives the status of each task. With no name: every feature. |
+| `progress_status(feature)` | Gives the summary and the dashboard (see below) of one feature. With no name: of every feature. |
 
 Register the server in your tool with this command, started from the project root:
 
@@ -80,11 +80,43 @@ Same operations, same rules, no dependency. The stop hook `hooks/tdd_gate.py` ru
 python3 mcp-servers/tdd-progress/progress.py create <feature> --test-command "<command>" --tasks tasks.json
 python3 mcp-servers/tdd-progress/progress.py next <feature>
 python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|real-testing|done> [--note "<agent output>"]
-python3 mcp-servers/tdd-progress/progress.py status [<feature>]
+python3 mcp-servers/tdd-progress/progress.py status [<feature>] [--json]
 python3 mcp-servers/tdd-progress/progress.py verify
 ```
 
-`tasks.json` is a list: `[{"id": "T1", "title": "...", "depends_on": []}]`. Every command prints JSON and exits `0`. A refusal prints `ERROR: <reason>` on standard error and exits `1`. `verify` prints `{}` and exits `0`, or prints one `FAIL:` line per problem and exits `1`.
+`tasks.json` is a list: `[{"id": "T1", "title": "...", "depends_on": []}]`. Every command prints JSON and exits `0`, except `status`: it prints the dashboard, and the summary as JSON with `--json`. A refusal prints `ERROR: <reason>` on standard error and exits `1`. `verify` prints `{}` and exits `0`, or prints one `FAIL:` line per problem and exits `1`.
+
+## Dashboard
+
+`status` shows every feature and its tasks. Give a feature name to show only that feature.
+
+```
+$ python3 mcp-servers/tdd-progress/progress.py status
+login (open): 1 of 3 tasks done
+  TASK  STATUS          REJECTIONS  TITLE
+  T1    done            0           Reject an empty password
+  T2    dev, escalated  3           Hash the password
+  T3    new             0           Lock after 3 failures
+
+signup (closed): 1 of 1 tasks done
+  TASK  STATUS  REJECTIONS  TITLE
+  T1    done    0           Send the welcome mail
+```
+
+- The first line of a block is the feature, `open` or `closed`, and its number of tasks that are `done`.
+- `REJECTIONS` is the number of times the task was sent back to `dev`, by the review or by the real test.
+- `dev, escalated` is a task rejected 3 times: the workflow waits for the human partner.
+- With no feature in `specs/`, the command prints `No feature: specs/ holds no progress.json.`
+
+The summary is the same data for a program: `status --json` prints it, and `progress_status` returns it with the dashboard under the key `dashboard`.
+
+```json
+{"feature": "login", "status": "open",
+ "counts": {"new": 1, "dev": 1, "review": 0, "real-testing": 0, "done": 1},
+ "tasks": {"T1": "done", "T2": "dev", "T3": "new"},
+ "rejections": {"T1": 0, "T2": 3, "T3": 0},
+ "remaining": ["T2", "T3"], "finished": false}
+```
 
 ## Install the workflow in a project
 
@@ -102,3 +134,4 @@ Start the tool in the project. Accept the MCP server `tdd-progress` and the hook
 1. Write `/tdd-elaborate <what the feature does, and the command that runs the tests>`. Answer the questions, if any.
 2. Read `specs/<feature>/spec.md` and say that you approve it. The plan and the development follow with no other pause.
 3. To continue a feature in a later session, write `Continue the feature <feature>`.
+4. To see where every feature is, write `Show the progress`, or run `python3 mcp-servers/tdd-progress/progress.py status` in a terminal.
