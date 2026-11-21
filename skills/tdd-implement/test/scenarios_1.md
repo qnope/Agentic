@@ -1,4 +1,4 @@
-# Scenario 1: Happy path, two dependent tasks go from new to done
+# Scenario 1: Happy path in a git repository, two dependent tasks go from new to done, then the pull request
 
 ## Prompt
 Implement the feature `cart`.
@@ -107,7 +107,33 @@ Create `specs/cart/progress.json` with this exact content:
 }
 ````
 
+Create `.gitignore` with this exact content:
+
+````
+/origin.git/
+__pycache__/
+````
+
+Then make the scratch directory a git repository on the branch `main`, with every Setup file in one commit and a local folder as the remote `origin`. Run these commands from the scratch directory root, in this order:
+
+````
+git init --quiet --bare --initial-branch=main origin.git
+git init --quiet --initial-branch=main
+git config user.name "Scenario"
+git config user.email "scenario@example.com"
+git add --all
+git commit --quiet --message "initial"
+git remote add origin "$PWD/origin.git"
+git push --quiet origin main
+````
+
 ## Pass criteria
+- [ ] `git status --porcelain`, run from the scratch directory root before any other check, prints nothing (every file of the feature is committed).
+- [ ] `git log --format=%s feature/cart`, run from the scratch directory root, prints exactly these 4 lines in this order: `cart: closed`, `cart T2: Discount`, `cart T1: Cart total`, `initial` (one commit per task, with its id, then the end of the feature).
+- [ ] `git --git-dir=origin.git log --format=%s feature/cart`, run from the scratch directory root, prints the same 4 lines (the branch of the feature is pushed).
+- [ ] `git log --format=%s main` and `git --git-dir=origin.git log --format=%s main`, run from the scratch directory root, each print only the line `initial` (nothing is committed on the default branch).
+- [ ] The final output has a line that starts with `Pull request: none (` and contains `feature/cart` (the remote is a local folder: no pull request can be opened there, and the output says so).
+- [ ] The final output contains no `https://` link (no pull request link is invented).
 - [ ] `python3 mcp-servers/tdd-progress/progress.py status cart` exits with code 0 and its output shows 2 tasks under `done` and 0 task under `new`, `dev`, `review` and `real-testing`.
 - [ ] `specs/cart/progress.json` is byte-identical to its own content written again with `json.dumps(data, indent=2) + "\n"` (this is the layout the tool writes).
 - [ ] `python3 -m unittest discover -s tests`, run from the scratch directory root, exits with code 0 and prints `Ran <n> tests` with n at least 4.
@@ -121,3 +147,4 @@ Create `specs/cart/progress.json` with this exact content:
 
 ## RED baseline (without the skill)
 2026-11-21 — FAIL (3 of 3 runs failed) — the 3 runs wrote the 4 tests then the code in one pass, but never used the progress tool or the agents: both tasks stayed `new`, with no review and no real test ("There was no independent review and no real-user test").
+2026-11-21 — FAIL (3 of 3 runs failed) — with the skill as it was before the pull request step. Runs 1 and 3 finished both tasks, and the tool made one commit per task on `feature/cart`. But the feature was not closed, the branch was not pushed and the output had no line `Pull request:`. Run 2 finished no task: the permission system of the test session stopped it when it recorded its own review.

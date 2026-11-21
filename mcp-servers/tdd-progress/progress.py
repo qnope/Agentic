@@ -3,6 +3,7 @@
 
 One feature = one folder `specs/<feature>/` holding `spec.md`, `tasks/` and `progress.json`.
 A task goes new -> dev -> review -> real-testing -> done. A review or a real test can send it back to dev.
+In a git repository, a feature gets its own branch, each done task is one commit, and `pr` opens the pull request.
 """
 import argparse
 import json
@@ -79,6 +80,60 @@ def _check_no_cycle(tasks):
         raise ProgressError(f"dependency cycle between tasks: {', '.join(sorted(left))}")
 
 
+def _run(command, cwd):
+    """Run one command with no shell and no input. Return (exit code, output)."""
+    try:
+        done = subprocess.run(command, cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    except OSError as error:
+        return 1, str(error)
+    return done.returncode, (done.stdout if done.returncode == 0 else done.stdout + done.stderr).strip()
+
+
+def _git(root, *arguments):
+    return _run(["git", *arguments], root)
+
+
+def _branch(root):
+    """Return the current branch, or "" when the project root is not the top folder of a git repository."""
+    if _git(root, "rev-parse", "--is-inside-work-tree", "--show-cdup") != (0, "true"):
+        return ""
+    code, branch = _git(root, "symbolic-ref", "--short", "HEAD")
+    return branch if code == 0 else ""
+
+
+def _start_branch(root, feature):
+    """On the default branch, create the branch `feature/<feature>` and switch to it."""
+    code, default = _git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    if _branch(root) in ([default.removeprefix("origin/")] if code == 0 else ["main", "master"]):
+        code, output = _git(root, "checkout", "--quiet", "-b", f"feature/{feature}")
+        if code != 0:
+            raise ProgressError(f"cannot create the branch 'feature/{feature}': {output}")
+
+
+def _commit(root, message, path):
+    """Commit the changes under `path`. Return the short hash, or "" with no git repository or no change."""
+    if not _branch(root) or not _git(root, "status", "--porcelain", "--", path)[1]:
+        return ""
+    _git(root, "add", "--all", "--", path)
+    code, output = _git(root, "commit", "--quiet", "--message", message, "--", path)
+    if code != 0:
+        raise ProgressError(f"the commit failed: {output}")
+    return _git(root, "rev-parse", "--short", "HEAD")[1]
+
+
+def _record(root, data, message, path="."):
+    """Save the progress file, then commit the changes under `path`. A failed commit restores the file."""
+    file = _file(root, data["feature"])
+    before = file.read_text()
+    _save(root, data)
+    try:
+        return _commit(root, message, path)
+    except ProgressError:
+        file.write_text(before)
+        raise
+
+
 def create(root, feature, test_command, tasks):
     """Write `specs/<feature>/progress.json` with every task in status new."""
     path = _file(root, feature)
@@ -153,6 +208,7 @@ def update(root, feature, task_id, status, note=""):
         blockers = _unfinished_dependencies(data, task)
         if blockers:
             raise ProgressError(f"task '{task_id}' depends on tasks that are not done: {', '.join(blockers)}")
+        _start_branch(root, feature)
     elif status in PROOF:
         word, field = PROOF[status]
         if not note.strip().startswith(word):
@@ -170,8 +226,12 @@ def update(root, feature, task_id, status, note=""):
         task["rejections"] += 1
         task["note"] = note.strip()
     task["status"] = status
-    _save(root, data)
-    return {**_view(feature, task), "escalate": _escalated(task)}
+    result = {**_view(feature, task), "escalate": _escalated(task)}
+    if status == "done":
+        result["commit"] = _record(root, data, f"{feature} {task_id}: {task['title']}")
+    else:
+        _save(root, data)
+    return result
 
 
 def status(root, feature=None):
@@ -204,6 +264,28 @@ def dashboard(root, feature=None):
     return "\n\n".join(blocks) or "No feature: specs/ holds no progress.json."
 
 
+def _close(root, data):
+    """Close an open feature when every task is done and the test command passes. Return the problems."""
+    feature = data["feature"]
+    if data["status"] != "open":
+        return []
+    ask = f" (rejected {MAX_REJECTIONS} times: ask the human partner what to do)"
+    problems = [f"{feature}: task {t['id']} is '{t['status']}', not 'done'" + ask * _escalated(t)
+                for t in data["tasks"] if t["status"] != "done"]
+    if problems:
+        return problems
+    code, output = run_tests(data["test_command"], Path(root))
+    if code != 0:
+        return [f"{feature}: test command failed: {data['test_command']}",
+                *(f"  {line}" for line in output.splitlines()[-10:])]
+    data["status"] = "closed"
+    try:
+        _record(root, data, f"{feature}: closed", f"specs/{feature}/progress.json")
+    except ProgressError as error:
+        return [f"{feature}: {error}"]
+    return []
+
+
 def verify(root):
     """Check every open, started feature. Return the problems, or [] when there is none.
 
@@ -211,23 +293,41 @@ def verify(root):
     """
     problems = []
     for summary in status(root):
-        feature = summary["feature"]
-        data = _load(root, feature)
-        if data["status"] != "open" or all(t["status"] == "new" for t in data["tasks"]):
-            continue
-        if not summary["finished"]:
-            ask = f" (rejected {MAX_REJECTIONS} times: ask the human partner what to do)"
-            problems += [f"FAIL: {feature}: task {t['id']} is '{t['status']}', not 'done'" + ask * _escalated(t)
-                         for t in data["tasks"] if t["status"] != "done"]
-            continue
-        code, output = run_tests(data["test_command"], Path(root))
-        if code != 0:
-            problems.append(f"FAIL: {feature}: test command failed: {data['test_command']}")
-            problems += [f"FAIL:   {line}" for line in output.splitlines()[-10:]]
-            continue
-        data["status"] = "closed"
-        _save(root, data)
+        data = _load(root, summary["feature"])
+        if any(t["status"] != "new" for t in data["tasks"]):
+            problems += [f"FAIL: {line}" for line in _close(root, data)]
     return problems
+
+
+def open_pull_request(root, branch, title, body):
+    """Open the pull request of a pushed branch with the GitHub command line. Return (exit code, output)."""
+    return _run(["gh", "pr", "create", "--head", branch, "--title", title, "--body", body], root)
+
+
+def pull_request(root, feature):
+    """Close a finished feature, push its branch and open its pull request."""
+    data = _load(root, feature)
+    problems = _close(root, data)
+    if problems:
+        raise ProgressError("\n".join(problems))
+    branch = _branch(root)
+    if not branch:
+        raise ProgressError("no pull request: the project is not on a branch of a git repository")
+    code, output = _git(root, "ls-remote", "--symref", "origin", "HEAD")
+    if code != 0:
+        raise ProgressError(f"no pull request: the remote 'origin' does not answer: {output}")
+    if output.startswith(f"ref: refs/heads/{branch}\t"):
+        raise ProgressError(f"no pull request: the feature is on the default branch '{branch}'")
+    code, output = _git(root, "push", "--set-upstream", "origin", branch)
+    if code != 0:
+        raise ProgressError(f"no pull request: the push of the branch '{branch}' failed: {output}")
+    tasks = "\n".join(f"- {t['id']}: {t['title']}" for t in data["tasks"])
+    body = (f"Feature `{feature}`, developed with the tdd-loop workflow. Spec: `specs/{feature}/spec.md`.\n\n"
+            f"{tasks}\n\nTest command: `{data['test_command']}`")
+    code, output = open_pull_request(root, branch, feature, body)
+    if code != 0:
+        raise ProgressError(f"the branch '{branch}' is pushed, but the pull request is not open: {output}")
+    return {"feature": feature, "branch": branch, "url": (output.splitlines() or [""])[-1]}
 
 
 def main(argv=None):
@@ -248,6 +348,8 @@ def main(argv=None):
     show.add_argument("feature", nargs="?")
     show.add_argument("--json", action="store_true", help="print the summary as JSON instead of the dashboard")
     commands.add_parser("verify", help="exit 1 while a started feature has unfinished tasks or failing tests")
+    commands.add_parser("pr", help="close a finished feature, push its branch and open its pull request"
+                        ).add_argument("feature")
     args = parser.parse_args(argv)
     try:
         if args.command == "verify":
@@ -261,6 +363,8 @@ def main(argv=None):
             result = update(args.root, args.feature, args.task, args.status, args.note)
         elif args.command == "next":
             result = next_tasks(args.root, args.feature)
+        elif args.command == "pr":
+            result = pull_request(args.root, args.feature)
         elif args.json:
             result = status(args.root, args.feature)
         else:

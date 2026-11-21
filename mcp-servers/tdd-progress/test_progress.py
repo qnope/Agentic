@@ -1,6 +1,8 @@
 import contextlib
 import io
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,6 +48,42 @@ class Base(unittest.TestCase):
         with self.assertRaises(progress.ProgressError) as caught:
             call(*args, **kwargs)
         self.assertIn(text, str(caught.exception))
+
+
+def git(folder, *arguments):
+    return subprocess.run(["git", *arguments], cwd=folder, capture_output=True, text=True, check=True).stdout.strip()
+
+
+class GitBase(Base):
+    """The project root is a git repository on the branch main, with one commit and the remote origin."""
+
+    def setUp(self):
+        super().setUp()
+        own_config = patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"})
+        own_config.start()
+        self.addCleanup(own_config.stop)
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.remote = Path(folder.name)
+        for place, option in ((self.root, "--quiet"), (self.remote, "--bare")):
+            git(place, "init", "--quiet", option)
+            git(place, "symbolic-ref", "HEAD", "refs/heads/main")
+        git(self.root, "config", "user.name", "Test")
+        git(self.root, "config", "user.email", "test@example.com")
+        (self.root / "README.md").write_text("project\n")
+        git(self.root, "add", "--all")
+        git(self.root, "commit", "--quiet", "--message", "initial")
+        git(self.root, "remote", "add", "origin", str(self.remote))
+        git(self.root, "push", "--quiet", "origin", "main")
+
+    def subjects(self, branch="HEAD", place=None):
+        return git(place or self.root, "log", "--format=%s", branch).splitlines()
+
+    def refuse_every_commit(self):
+        hook = self.root / ".git" / "hooks" / "pre-commit"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\necho 'lint failed'\nexit 1\n")
+        hook.chmod(0o755)
 
 
 class CreateTest(Base):
@@ -182,6 +220,92 @@ class UpdateTest(Base):
         self.refused("unknown status", self.move, "T1", "started")
 
 
+class BranchTest(GitBase):
+    def branch(self):
+        return git(self.root, "symbolic-ref", "--short", "HEAD")
+
+    def test_dev_on_the_default_branch_starts_the_feature_branch(self):
+        self.create()
+        self.move("T1", "dev")
+        self.assertEqual(self.branch(), "feature/login")
+        self.move("T2", "dev")
+        self.assertEqual(self.branch(), "feature/login")
+
+    def test_dev_on_another_branch_keeps_it(self):
+        git(self.root, "checkout", "--quiet", "-b", "work")
+        self.create()
+        self.move("T1", "dev")
+        self.assertEqual(self.branch(), "work")
+
+    def test_the_default_branch_is_the_one_origin_names(self):
+        git(self.root, "checkout", "--quiet", "-b", "trunk")
+        git(self.root, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+        git(self.root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+        self.create()
+        self.move("T1", "dev")
+        self.assertEqual(self.branch(), "feature/login")
+        git(self.root, "checkout", "--quiet", "main")
+        self.move("T2", "dev")
+        self.assertEqual(self.branch(), "main")
+
+    def test_refuses_dev_when_the_feature_branch_cannot_be_created(self):
+        git(self.root, "branch", "feature/login")
+        self.create()
+        self.refused("feature/login", self.move, "T1", "dev")
+        self.assertEqual((self.branch(), self.stored()["tasks"][0]["status"]), ("main", "new"))
+
+
+class CommitTest(GitBase):
+    def test_done_commits_the_work_of_the_task_with_its_id(self):
+        self.create()
+        self.move("T1", "dev")
+        (self.root / "password.py").write_text("def check(): ...\n")
+        result, _ = self.move("T1", "review", "real-testing", "done")
+        self.assertEqual(self.subjects(), ["login T1: Reject an empty password", "initial"])
+        self.assertEqual(result["commit"], git(self.root, "rev-parse", "--short", "HEAD"))
+        self.assertEqual(git(self.root, "status", "--porcelain"), "")
+        self.assertIn("password.py", git(self.root, "show", "--name-only", "--format=", "HEAD"))
+        committed = json.loads(git(self.root, "show", "HEAD:specs/login/progress.json"))
+        self.assertEqual(committed["tasks"][0]["status"], "done")
+
+    def test_only_the_move_to_done_commits(self):
+        self.create()
+        result, _ = self.move("T1", "dev", "review", "real-testing")
+        self.assertNotIn("commit", result)
+        self.assertEqual(self.subjects(), ["initial"])
+
+    def test_refuses_done_when_the_commit_fails(self):
+        self.create()
+        self.move("T1", "dev", "review", "real-testing")
+        self.refuse_every_commit()
+        self.refused("lint failed", self.move, "T1", "done")
+        task = self.stored()["tasks"][0]
+        self.assertEqual((task["status"], "real_testing" in task), ("real-testing", False))
+        self.assertEqual(self.subjects(), ["initial"])
+
+    def test_done_with_nothing_to_commit_gives_no_commit(self):
+        (self.root / ".gitignore").write_text("specs/\n")
+        git(self.root, "add", "--all")
+        git(self.root, "commit", "--quiet", "--message", "ignore the specs")
+        self.create()
+        result, _ = self.finish("T1")
+        self.assertEqual((result["status"], result["commit"]), ("done", ""))
+        self.assertEqual(self.subjects()[0], "ignore the specs")
+
+    def test_done_outside_git_gives_no_commit(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        self.root = Path(outside.name)
+        self.create()
+        self.assertEqual(self.finish("T1")[0]["commit"], "")
+
+    def test_a_folder_inside_a_git_repository_is_not_committed(self):
+        self.root = self.root / "sub" / "project"
+        self.create()
+        self.assertEqual(self.finish("T1")[0]["commit"], "")
+        self.assertEqual((self.subjects(), git(self.root, "symbolic-ref", "--short", "HEAD")), (["initial"], "main"))
+
+
 class StatusTest(Base):
     def test_counts_and_remaining(self):
         self.create()
@@ -277,6 +401,98 @@ class VerifyTest(Base):
         self.assertEqual(self.stored()["status"], "open")
 
 
+class CloseTest(GitBase, VerifyTest):
+    def test_closing_commits_the_progress_file_only(self):
+        self.create(tasks=TASKS[:1])
+        self.finish("T1")
+        (self.root / "notes.txt").write_text("not for the commit\n")
+        self.assertEqual(self.verify()[0], [])
+        self.assertEqual(self.subjects()[0], "login: closed")
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD"), "specs/login/progress.json")
+        self.assertEqual(git(self.root, "status", "--porcelain"), "?? notes.txt")
+
+    def test_keeps_the_feature_open_when_the_closing_commit_fails(self):
+        self.create(tasks=TASKS[:1])
+        self.finish("T1")
+        self.refuse_every_commit()
+        self.assertTrue(self.verify()[0][0].startswith("FAIL: login: the commit failed"))
+        self.assertEqual(self.stored()["status"], "open")
+
+
+class PullRequestTest(GitBase):
+    URL = "https://github.com/owner/project/pull/7"
+
+    def pull_request(self, tests=PASS, opened=(0, URL)):
+        with patch.object(progress, "run_tests", return_value=tests), \
+                patch.object(progress, "open_pull_request", return_value=opened) as opener:
+            return progress.pull_request(self.root, "login"), opener
+
+    def test_closes_the_feature_pushes_the_branch_and_opens_the_pull_request(self):
+        self.create(tasks=TASKS[:2])
+        self.finish("T1")
+        self.finish("T2")
+        result, opener = self.pull_request()
+        self.assertEqual(result, {"feature": "login", "branch": "feature/login", "url": self.URL})
+        self.assertEqual(self.stored()["status"], "closed")
+        self.assertEqual(self.subjects("feature/login", self.remote), [
+            "login: closed", "login T2: Hash the password", "login T1: Reject an empty password", "initial"])
+        self.assertEqual(self.subjects("main", self.remote), ["initial"])
+        (root, branch, title, body), _ = opener.call_args
+        self.assertEqual((root, branch, title), (self.root, "feature/login", "login"))
+        for text in ("specs/login/spec.md", "- T1: Reject an empty password", "- T2: Hash the password", "run-tests"):
+            self.assertIn(text, body)
+
+    def test_refuses_an_unfinished_feature_and_pushes_nothing(self):
+        self.create(tasks=TASKS[:2])
+        self.finish("T1")
+        self.refused("login: task T2 is 'new', not 'done'", self.pull_request)
+        self.finish("T2")
+        self.refused("login: test command failed: run-tests\n  test_lock ... FAILED", self.pull_request, tests=FAIL)
+        self.assertEqual((self.stored()["status"], git(self.remote, "branch", "--list", "feature/*")), ("open", ""))
+
+    def test_refuses_to_push_the_default_branch_of_the_remote(self):
+        git(self.root, "checkout", "--quiet", "-b", "work")
+        git(self.root, "push", "--quiet", "origin", "work")
+        git(self.remote, "symbolic-ref", "HEAD", "refs/heads/work")
+        self.create(tasks=TASKS[:1])
+        self.finish("T1")
+        self.refused("default branch 'work'", self.pull_request)
+        self.assertEqual(self.subjects("work", self.remote), ["initial"])
+
+    def test_refuses_without_a_remote_and_still_closes_the_feature(self):
+        git(self.root, "remote", "remove", "origin")
+        self.create(tasks=TASKS[:1])
+        self.finish("T1")
+        self.refused("no pull request: the remote 'origin'", self.pull_request)
+        self.assertEqual((self.stored()["status"], self.subjects()[0]), ("closed", "login: closed"))
+
+    def test_says_that_the_branch_is_pushed_when_the_pull_request_cannot_be_opened(self):
+        self.create(tasks=TASKS[:1])
+        self.finish("T1")
+        self.refused("the branch 'feature/login' is pushed, but the pull request is not open: gh: not found",
+                     self.pull_request, opened=(1, "gh: not found"))
+        self.assertEqual(self.subjects("feature/login", self.remote)[0], "login: closed")
+
+    def test_refuses_outside_git(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        self.root = Path(outside.name)
+        self.create(tasks=TASKS[:1])
+        self.finish("T1")
+        self.refused("not on a branch of a git repository", self.pull_request)
+
+    def test_opens_the_pull_request_with_the_github_command_line(self):
+        tools = self.root / "tools"
+        tools.mkdir()
+        (tools / "gh").write_text(f'#!/bin/sh\necho "$@" > called.txt\necho "{self.URL}"\n')
+        (tools / "gh").chmod(0o755)
+        with patch.dict(os.environ, {"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}"}):
+            result = progress.open_pull_request(self.root, "feature/login", "login", "the body")
+        self.assertEqual(result, (0, self.URL))
+        self.assertEqual((self.root / "called.txt").read_text().strip(),
+                         "pr create --head feature/login --title login --body the body")
+
+
 class CommandLineTest(Base):
     def run_cli(self, *args, stdin=""):
         out, err = io.StringIO(), io.StringIO()
@@ -303,6 +519,15 @@ class CommandLineTest(Base):
                                               "  T1    new     0           Reject an empty password\n"))
         code, out, _ = self.run_cli("status", "--json")
         self.assertEqual((code, json.loads(out)[0]["rejections"]), (0, {"T1": 0}))
+
+    def test_pr_prints_the_pull_request_or_the_refusal(self):
+        self.run_cli("create", "login", "--test-command", "true", stdin=json.dumps(TASKS[:1]))
+        code, out, err = self.run_cli("pr", "login")
+        self.assertEqual((code, out, err), (1, "", "ERROR: login: task T1 is 'new', not 'done'\n"))
+        with patch.object(progress, "pull_request", return_value={"url": "https://example.com/pull/1"}) as opener:
+            code, out, _ = self.run_cli("pr", "login")
+        self.assertEqual((code, json.loads(out)["url"]), (0, "https://example.com/pull/1"))
+        opener.assert_called_once_with(str(self.root), "login")
 
     def test_error_goes_to_stderr_with_exit_code_1(self):
         code, out, err = self.run_cli("update", "login", "T1", "dev")
