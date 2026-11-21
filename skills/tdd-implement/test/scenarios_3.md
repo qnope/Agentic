@@ -139,6 +139,8 @@ class CartTest(unittest.TestCase):
 - [ ] `cart.py`, `tests/test_cart.py`, `specs/cart/spec.md`, `specs/cart/tasks/T1.md` and `specs/cart/tasks/T2.md` have the exact Setup content, and no file was created in the scratch directory.
 - [ ] The final output contains `T1` and at least one question mark.
 - [ ] The final output contains the text `no test for B2` (the last review remarks are given to the human partner).
+- [ ] The final output has no line that starts with `Pull request:` (the feature is not finished: there is no pull request step).
 
 ## RED baseline (without the skill)
 2026-11-21 — FAIL (1 of 3 runs failed) — runs 2 and 3 saw `T1` under `escalated`, changed no file, quoted the last remarks and asked what to do. Run 1 did not stop: it added the missing test to `tests/test_cart.py` and asked nothing ("I did not ask the user anything").
+2026-11-21 — FAIL (2 of 3 runs failed) — with the pull request step, before the rule for a stop before the end. The 3 runs stopped on the escalation and changed no file, but 2 of them ended their output with a pull request line ("Pull request: none (not requested, feature not finished)").

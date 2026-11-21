@@ -12,7 +12,7 @@ Third step of the `tdd-loop` workflow: `tdd-elaborate -> tdd-plan -> tdd-impleme
    - `python3 mcp-servers/tdd-progress/progress.py next <feature>`
    - `python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|real-testing|done> [--note "<agent output>"]`
 2. **Every task is tested, reviewed and really tested.** Every task goes `new -> dev -> review -> real-testing -> done`, with its tests written first, a real review and a real test, even if the user asks to skip one of them, or to mark the tasks done. Never change a status without the work behind it. One status change per call: never chain two status changes in one command.
-3. **Rejected 3 times → stop.** When `progress_next` lists a task under `escalated`, or a `progress_update` result has `escalate: true`: change no file and no status, name the task, quote its `note` (the last remarks) and ask the human partner what to do.
+3. **Rejected 3 times → stop.** When `progress_next` lists a task under `escalated`, or a `progress_update` result has `escalate: true`: change no file and no status, name the task, quote its `note` (the last remarks) and ask the human partner what to do. That question is the end of your output: no report.
 4. **Stay in your role.** Do not change the spec or the task files.
 
 ## Agents
@@ -34,4 +34,8 @@ The developer is the agent `tdd-developer` (`agents/tdd-developer.md`). The revi
 6. Go to step 1.
 
 ## Report
+Write the report only when `finished` is true. If you stop before that, call no pull request tool and write no line that starts with `Pull request:`, not even `Pull request: none`.
+
 One block per task: the line `<id>: APPROVED, PASSED (rejections: <n>)`, in exactly this format, then the lines of its `review` and of its `real_testing` (both are in `specs/<feature>/progress.json`). Then the test command and its result.
+
+Last, call `progress_pull_request(feature)`, or run `python3 mcp-servers/tdd-progress/progress.py pr <feature>`: the tool closes the feature, pushes its branch and opens the pull request. The last line of the report is, in exactly this format: `Pull request: <url>`, or `Pull request: none (<the refusal of the tool>)` when the tool refuses. After a refusal, change nothing, and do not push or open a pull request yourself.

@@ -147,3 +147,4 @@ Start the tool in the project. Accept the MCP server `tdd-progress` and the hook
 3. To continue a feature in a later session, write `Continue the feature <feature>`.
 4. To see where every feature is, write `Show the progress`, or run `python3 mcp-servers/tdd-progress/progress.py status` in a terminal.
 5. To fix a bug, write `/tdd-bugfix <the input, the result you get, the result you expect>`. A test that fails proves the bug first. Then the fix is developed, reviewed and really tested as the one task of the feature `fix-<name>`, with no spec to approve and no plan.
+6. In a git repository, nothing more to do: the feature gets its branch `feature/<feature>`, each done task is one commit, and the pull request is opened at the end (see `## Git`). The pull request needs the GitHub command line `gh`, signed in.
