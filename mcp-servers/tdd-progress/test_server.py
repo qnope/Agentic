@@ -60,6 +60,13 @@ class ServerTest(unittest.TestCase):
         self.assertEqual([task["id"] for task in json.loads(text(results[1]))["ready"]], ["T1"])
         self.assertEqual(json.loads(text(results[6]))["remaining"], ["T2"])
         self.assertEqual(json.loads(text(results[7]))["features"][0]["feature"], "login")
+        for result in results[6:8]:
+            self.assertEqual(json.loads(text(result))["dashboard"].splitlines(), [
+                "login (open): 1 of 2 tasks done",
+                "  TASK  STATUS  REJECTIONS  TITLE",
+                "  T1    done    0           Reject an empty password",
+                "  T2    new     0           Lock after 3 failures",
+            ])
         stored = json.loads((self.root / "specs" / "login" / "progress.json").read_text())
         self.assertEqual([task["status"] for task in stored["tasks"]], ["done", "new"])
 
