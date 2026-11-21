@@ -49,7 +49,8 @@ class ServerTest(unittest.TestCase):
             ("progress_next", {"feature": "login"}),
             ("progress_update", {"feature": "login", "task_id": "T1", "status": "dev"}),
             ("progress_update", {"feature": "login", "task_id": "T1", "status": "review"}),
-            ("progress_update", {"feature": "login", "task_id": "T1", "status": "done"}),
+            ("progress_update", {"feature": "login", "task_id": "T1", "status": "done",
+                                 "note": "APPROVED\n- test_rejects_empty_password"}),
             ("progress_status", {"feature": "login"}),
             ("progress_status", {}),
         )

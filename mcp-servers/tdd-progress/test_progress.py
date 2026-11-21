@@ -14,6 +14,7 @@ TASKS = [
     {"id": "T3", "title": "Lock after 3 failures", "depends_on": ["T1", "T2"]},
 ]
 PASS, FAIL = (0, "all green"), (1, "test_lock ... FAILED")
+REVIEW = "APPROVED\n- test_rejects_empty_password"
 
 
 class Base(unittest.TestCase):
@@ -25,7 +26,7 @@ class Base(unittest.TestCase):
     def create(self, feature="login", tasks=TASKS, command="run-tests"):
         return progress.create(self.root, feature, command, tasks)
 
-    def move(self, task_id, *statuses, feature="login", note="", tests=PASS):
+    def move(self, task_id, *statuses, feature="login", note=REVIEW, tests=PASS):
         with patch.object(progress, "run_tests", return_value=tests) as run:
             for status in statuses:
                 result = progress.update(self.root, feature, task_id, status, note)
@@ -120,6 +121,15 @@ class UpdateTest(Base):
         self.refused("T2", self.move, "T3", "dev")
         self.assertEqual(self.stored()["tasks"][2]["status"], "new")
 
+    def test_done_needs_the_reviewer_output_and_keeps_it(self):
+        self.create()
+        self.move("T1", "dev", "review")
+        self.refused("APPROVED", self.move, "T1", "done", note="")
+        self.refused("APPROVED", self.move, "T1", "done", note="Looks fine.")
+        self.assertEqual(self.stored()["tasks"][0]["status"], "review")
+        self.move("T1", "done")
+        self.assertEqual(self.stored()["tasks"][0]["note"], REVIEW)
+
     def test_refuses_done_while_the_tests_fail(self):
         self.create()
         self.move("T1", "dev", "review")
@@ -129,7 +139,7 @@ class UpdateTest(Base):
     def test_rejection_needs_a_note_and_escalates_at_the_third(self):
         self.create()
         self.move("T1", "dev", "review")
-        self.refused("note", self.move, "T1", "dev")
+        self.refused("note", self.move, "T1", "dev", note=" ")
         result, run = self.move("T1", "dev", note="No test for the empty string.")
         self.assertEqual((result["rejections"], result["escalate"]), (1, False))
         self.assertEqual(self.stored()["tasks"][0]["note"], "No test for the empty string.")
@@ -230,7 +240,7 @@ class CommandLineTest(Base):
         self.run_cli("create", "login", "--test-command", "echo boom && exit 3", stdin=json.dumps(TASKS[:1]))
         self.run_cli("update", "login", "T1", "dev")
         self.run_cli("update", "login", "T1", "review")
-        code, _, err = self.run_cli("update", "login", "T1", "done")
+        code, _, err = self.run_cli("update", "login", "T1", "done", "--note", REVIEW)
         self.assertEqual(code, 1)
         self.assertIn("boom", err)
         code, out, _ = self.run_cli("verify")

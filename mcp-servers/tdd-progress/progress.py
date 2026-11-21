@@ -151,10 +151,14 @@ def update(root, feature, task_id, status, note=""):
         if blockers:
             raise ProgressError(f"task '{task_id}' depends on tasks that are not done: {', '.join(blockers)}")
     elif status == "done":
+        if not note.strip().startswith("APPROVED"):
+            raise ProgressError(f"task '{task_id}' stays in review: 'done' needs the reviewer output "
+                                "as note, and its first line is APPROVED")
         code, output = run_tests(data["test_command"], Path(root))
         if code != 0:
             raise ProgressError(f"task '{task_id}' stays in review: the test command failed "
                                 f"(exit {code}): {data['test_command']}\n{output[-2000:]}")
+        task["note"] = note.strip()
     elif task["status"] == "review":
         if not note.strip():
             raise ProgressError("a task sent back to dev needs a note with the review remarks")

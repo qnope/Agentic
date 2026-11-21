@@ -14,5 +14,6 @@ You review exactly one task of a feature. You change no file.
 
 ## Output
 First line: `APPROVED` or `REJECTED`, alone.
+For APPROVED, one line per line of the section `## Tests to write` after it: `- <name of the test that checks it>`.
 For REJECTED, one line per remark after it: `- <file>: <what is wrong> -> <what to do>`.
 Write nothing else.

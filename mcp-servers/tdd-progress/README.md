@@ -39,7 +39,7 @@ specs/<feature>/
 
 - A task goes `new -> dev -> review -> done`. A review can send it back: `review -> dev`. Any other move is refused.
 - `new -> dev` is refused while a task of `depends_on` is not `done`.
-- `review -> done` runs `test_command` from the project root. It is refused while the command fails.
+- `review -> done` needs the reviewer output as note: its first line is `APPROVED`. The note is kept in the task. The move then runs `test_command` from the project root. It is refused while the command fails.
 - `review -> dev` needs a note (the review remarks). It adds 1 to `rejections`. At 3 rejections the task is escalated: the human partner decides.
 - `create` refuses a duplicate id, an unknown dependency, a dependency cycle, and a feature that has already started.
 - `verify` looks at every feature that is `open` and has at least one task out of `new`. It fails while a task is not `done` or the test command fails. When both checks pass, the feature becomes `closed`.
@@ -50,7 +50,7 @@ specs/<feature>/
 |---|---|
 | `progress_create(feature, test_command, tasks)` | Creates `progress.json`, every task `new`. |
 | `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev` and `review`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
-| `progress_update(feature, task_id, status, note)` | Moves one task to its next status. |
+| `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the reviewer output: required for `done` and for a rejection. |
 | `progress_status(feature)` | Counts the tasks per status. With no name: every feature. |
 
 Register the server in your tool with this command, started from the project root:
@@ -74,7 +74,7 @@ Same operations, same rules, no dependency. The stop hook uses `verify`.
 ```
 python3 mcp-servers/tdd-progress/progress.py create <feature> --test-command "<command>" --tasks tasks.json
 python3 mcp-servers/tdd-progress/progress.py next <feature>
-python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|done> [--note "<remarks>"]
+python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|done> [--note "<reviewer output>"]
 python3 mcp-servers/tdd-progress/progress.py status [<feature>]
 python3 mcp-servers/tdd-progress/progress.py verify
 ```

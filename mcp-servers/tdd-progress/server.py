@@ -64,10 +64,11 @@ def progress_next(feature: str) -> dict:
 def progress_update(feature: str, task_id: str, status: Literal["dev", "review", "done"], note: str = "") -> dict:
     """Move one task to its next status. Any other move is refused, with the reason.
 
-    new -> dev: needs every dependency done. dev -> review. review -> done: runs the
-    test command, refused while it fails. review -> dev: the review rejected the task,
-    note is required and holds the review remarks. The result has escalate: true when
-    the task was rejected 3 times: stop and ask the human partner.
+    new -> dev: needs every dependency done. dev -> review. review -> done: note is
+    required and holds the reviewer output, whose first line is APPROVED; the tool then
+    runs the test command, refused while it fails. review -> dev: the review rejected
+    the task, note is required and holds the review remarks. The result has
+    escalate: true when the task was rejected 3 times: stop and ask the human partner.
     """
     return call(progress.update, feature, task_id, status, note)
 
