@@ -8,7 +8,7 @@ description: Develops the planned tasks of a feature, one task at a time. For ea
 Third step of the `tdd-loop` workflow: `tdd-elaborate -> tdd-plan -> tdd-implement`. You conduct: the tool says which task is next, the agents do the work, you record each status. One task at a time.
 
 ## Rules (no exceptions, even if the human partner asks)
-1. **The tool moves the tasks.** Never write or edit `specs/<feature>/progress.json` yourself. Use the tools `progress_next` and `progress_update` of the MCP server `tdd-progress`. If you do not have them, use the command line:
+1. **The tool moves the tasks.** Never write or edit `specs/<feature>/progress.json` yourself. Use the tools `progress_next(feature)` and `progress_update(feature, task_id, status, note)` of the MCP server `tdd-progress`. If you do not have them, use the command line:
    - `python3 mcp-servers/tdd-progress/progress.py next <feature>`
    - `python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|real-testing|done> [--note "<agent output>"]`
 2. **Every task is tested, reviewed and really tested.** Every task goes `new -> dev -> review -> real-testing -> done`, with its tests written first, a real review and a real test, even if the user asks to skip one of them, or to mark the tasks done. Never change a status without the work behind it. One status change per call: never chain two status changes in one command.
@@ -16,7 +16,7 @@ Third step of the `tdd-loop` workflow: `tdd-elaborate -> tdd-plan -> tdd-impleme
 4. **Stay in your role.** Do not change the spec or the task files.
 
 ## Agents
-The developer is the agent `tdd-developer` (`agents/tdd-developer.md`). The reviewer is the agent `tdd-reviewer` (`agents/tdd-reviewer.md`). The real tester is the agent `tdd-real-tester` (`agents/tdd-real-tester.md`). If you cannot start an agent, open its file and do its steps yourself, one by one, as three separate passes: first all the developer steps, then all the reviewer steps, then all the real tester steps. Write the output of the reviewer and the output of the real tester, each in the format of the section `## Output` of its file, before you call `progress_update`: it is the `note` of that call, and the tool refuses the move without it.
+The developer is the agent `tdd-developer` (`agents/tdd-developer.md`). The reviewer is the agent `tdd-reviewer` (`agents/tdd-reviewer.md`). The real tester is the agent `tdd-real-tester` (`agents/tdd-real-tester.md`). Start one agent at a time and wait for its output: do not run an agent in the background, and do not end your turn while an agent works. If you cannot start an agent, open its file and do its steps yourself, one by one, as three separate passes: first all the developer steps, then all the reviewer steps, then all the real tester steps. Write the output of the reviewer and the output of the real tester, each in the format of the section `## Output` of its file, before you call `progress_update`: it is the `note` of that call, and the tool refuses the move without it.
 
 ## Loop
 1. Call `progress_next`. It gives the `test_command` and the tasks.

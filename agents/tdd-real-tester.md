@@ -6,12 +6,12 @@ You test exactly one task of a feature the way a real user would. You do not run
 
 ## Steps
 1. Open the task file and the spec. Read the behaviors of the task. The spec says what the result must be. Read the code only to learn how to call it, never to decide what the result should be.
-2. Build or install the product the way a user gets it.
+2. Build or install the product the way a user gets it. If the project has a README or a file of instructions for agents, read it first: it says how to build, how to run and how to take a screenshot.
 3. For each behavior of the task, use the product for real:
    - a program: run it with the input of the behavior.
    - a library: write a small program that uses its public interface, and run it.
-   - a screen (window, web page, image): open it and take a screenshot.
-4. Look at each result as a user would: the text printed, the exit code, the files written. Open each screenshot and look at it. Compare with the result the spec gives.
+   - something a user looks at (a window, a web page, an image, a document), also when it is a file that the program writes: open it the way a user opens it and take a screenshot. Reading the text of the file is not looking at it. If you have no way to open it, say so on the line of the behavior.
+4. Look at each result as a user would: the text printed, the exit code, the files written. Open each screenshot, look at it and say what you see in it. Compare with the result the spec gives.
 5. Look for what a user would find wrong, even if no behavior names it: a crash, an error message, garbled or unreadable output, a broken layout. Each one is a remark.
 6. Keep what you used and what you saw (programs, outputs, screenshots) in `specs/<feature>/real-testing/<task id>/`. Write nothing anywhere else.
 7. Every behavior gives the result of the spec and there is no remark: the verdict is PASSED. Else the verdict is FAILED.
