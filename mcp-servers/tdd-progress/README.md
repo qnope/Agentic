@@ -16,9 +16,11 @@ One feature is one folder in the project that uses the workflow:
 specs/<feature>/
 ├── spec.md
 ├── progress.json
-└── tasks/
-    ├── T1.md
-    └── T2.md
+├── tasks/
+│   ├── T1.md
+│   └── T2.md
+└── real-testing/
+    └── T1/        what the real tester used and saw for the task T1 (programs, outputs, screenshots)
 ```
 
 ```json
@@ -86,31 +88,17 @@ python3 mcp-servers/tdd-progress/progress.py verify
 
 ## Install the workflow in a project
 
-Example with Claude Code. Run the commands from the root of your project. `A` is the path of this repository.
+Run these commands from the root of your project. `A` is the path of this repository. Use `install_cursor.py` for Cursor.
 
 ```
 A=/path/to/Agentic
-mkdir -p .claude/skills .claude/agents hooks mcp-servers
-cp -r $A/skills/tdd-elaborate $A/skills/tdd-plan $A/skills/tdd-implement .claude/skills/
-cp $A/agents/tdd-developer.md $A/agents/tdd-reviewer.md $A/agents/tdd-real-tester.md .claude/agents/
-cp $A/hooks/tdd_gate.py hooks/
-cp -r $A/mcp-servers/tdd-progress mcp-servers/
+$A/install_claude.py workflow/tdd-loop
 pip install -r mcp-servers/tdd-progress/requirements.txt
 ```
 
-Create `.mcp.json` at the root of your project:
+The script copies the three skills, the three agents, the stop hook and this server into the project, and registers the server and the hook in the config files of the tool. The file `README.md` at the root of this repository gives the details.
 
-```json
-{"mcpServers": {"tdd-progress": {"command": "python3", "args": ["mcp-servers/tdd-progress/server.py"]}}}
-```
-
-Add the stop hook to `.claude/settings.json`:
-
-```json
-{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "python3 hooks/tdd_gate.py"}]}]}}
-```
-
-Start Claude Code in the project. Accept the MCP server `tdd-progress` when it asks. Then:
+Start the tool in the project. Accept the MCP server `tdd-progress` and the hook when it asks. Then:
 
 1. Write `/tdd-elaborate <what the feature does, and the command that runs the tests>`. Answer the questions, if any.
 2. Read `specs/<feature>/spec.md` and say that you approve it. The plan and the development follow with no other pause.
