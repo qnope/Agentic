@@ -178,6 +178,7 @@ def status(root, feature=None):
     counts = {name: sum(t["status"] == name for t in data["tasks"]) for name in NEXT}
     remaining = [t["id"] for t in data["tasks"] if t["status"] != "done"]
     return {"feature": feature, "status": data["status"], "counts": counts,
+            "tasks": {t["id"]: t["status"] for t in data["tasks"]},
             "remaining": remaining, "finished": not remaining}
 
 

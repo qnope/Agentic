@@ -164,6 +164,7 @@ class StatusTest(Base):
         result = progress.status(self.root, "login")
         self.assertEqual(result["counts"], {"new": 1, "dev": 1, "review": 0, "done": 1})
         self.assertEqual((result["remaining"], result["finished"], result["status"]), (["T2", "T3"], False, "open"))
+        self.assertEqual(result["tasks"], {"T1": "done", "T2": "dev", "T3": "new"})
 
     def test_lists_every_feature(self):
         self.create()

@@ -75,7 +75,7 @@ def progress_update(feature: str, task_id: str, status: Literal["dev", "review",
 
 @server.tool()
 def progress_status(feature: str = "") -> dict:
-    """Count the tasks per status and list the remaining ones.
+    """Count the tasks per status, give the status of each task and list the remaining ones.
 
     With a feature name: that feature. With no name: every feature, under the key features.
     """

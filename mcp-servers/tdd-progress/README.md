@@ -51,7 +51,7 @@ specs/<feature>/
 | `progress_create(feature, test_command, tasks)` | Creates `progress.json`, every task `new`. |
 | `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev` and `review`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
 | `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the reviewer output: required for `done` and for a rejection. |
-| `progress_status(feature)` | Counts the tasks per status. With no name: every feature. |
+| `progress_status(feature)` | Counts the tasks per status and gives the status of each task. With no name: every feature. |
 
 Register the server in your tool with this command, started from the project root:
 
@@ -80,3 +80,35 @@ python3 mcp-servers/tdd-progress/progress.py verify
 ```
 
 `tasks.json` is a list: `[{"id": "T1", "title": "...", "depends_on": []}]`. Every command prints JSON and exits `0`. A refusal prints `ERROR: <reason>` on standard error and exits `1`. `verify` prints `{}` and exits `0`, or prints one `FAIL:` line per problem and exits `1`.
+
+## Install the workflow in a project
+
+Example with Claude Code. Run the commands from the root of your project. `A` is the path of this repository.
+
+```
+A=/path/to/Agentic
+mkdir -p .claude/skills .claude/agents hooks mcp-servers
+cp -r $A/skills/tdd-elaborate $A/skills/tdd-plan $A/skills/tdd-implement .claude/skills/
+cp $A/agents/tdd-developer.md $A/agents/tdd-reviewer.md .claude/agents/
+cp $A/hooks/tdd_gate.py hooks/
+cp -r $A/mcp-servers/tdd-progress mcp-servers/
+pip install -r mcp-servers/tdd-progress/requirements.txt
+```
+
+Create `.mcp.json` at the root of your project:
+
+```json
+{"mcpServers": {"tdd-progress": {"command": "python3", "args": ["mcp-servers/tdd-progress/server.py"]}}}
+```
+
+Add the stop hook to `.claude/settings.json`:
+
+```json
+{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "python3 hooks/tdd_gate.py"}]}]}}
+```
+
+Start Claude Code in the project. Accept the MCP server `tdd-progress` when it asks. Then:
+
+1. Write `/tdd-elaborate <what the feature does, and the command that runs the tests>`. Answer the questions, if any.
+2. Read `specs/<feature>/spec.md` and say that you approve it. The plan and the development follow with no other pause.
+3. To continue a feature in a later session, write `Continue the feature <feature>`.
