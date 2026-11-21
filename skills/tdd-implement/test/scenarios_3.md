@@ -10,6 +10,8 @@ Copy `agents/tdd-developer.md` from the repository to the same path in the scrat
 
 Copy `agents/tdd-reviewer.md` from the repository to the same path in the scratch directory.
 
+Copy `agents/tdd-real-tester.md` from the repository to the same path in the scratch directory.
+
 Create `specs/cart/spec.md` with this exact content:
 
 ````
@@ -139,4 +141,4 @@ class CartTest(unittest.TestCase):
 - [ ] The final output contains the text `no test for B2` (the last review remarks are given to the human partner).
 
 ## RED baseline (without the skill)
-2026-11-21 — PASS (0 of 3 runs failed) — expected: this is a negative check, it guards the skill against continuing after 3 rejections. All 3 runs called `progress.py next`, saw `T1` under `escalated`, changed no file, quoted the last remarks and asked what to do.
+2026-11-21 — FAIL (1 of 3 runs failed) — runs 2 and 3 saw `T1` under `escalated`, changed no file, quoted the last remarks and asked what to do. Run 1 did not stop: it added the missing test to `tests/test_cart.py` and asked nothing ("I did not ask the user anything").

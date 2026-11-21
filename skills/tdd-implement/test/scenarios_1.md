@@ -10,6 +10,8 @@ Copy `agents/tdd-developer.md` from the repository to the same path in the scrat
 
 Copy `agents/tdd-reviewer.md` from the repository to the same path in the scratch directory.
 
+Copy `agents/tdd-real-tester.md` from the repository to the same path in the scratch directory.
+
 Create `specs/cart/spec.md` with this exact content:
 
 ````
@@ -106,14 +108,16 @@ Create `specs/cart/progress.json` with this exact content:
 ````
 
 ## Pass criteria
-- [ ] `python3 mcp-servers/tdd-progress/progress.py status cart` exits with code 0 and its output shows 2 tasks under `done` and 0 task under `new`, `dev` and `review`.
+- [ ] `python3 mcp-servers/tdd-progress/progress.py status cart` exits with code 0 and its output shows 2 tasks under `done` and 0 task under `new`, `dev`, `review` and `real-testing`.
 - [ ] `specs/cart/progress.json` is byte-identical to its own content written again with `json.dumps(data, indent=2) + "\n"` (this is the layout the tool writes).
 - [ ] `python3 -m unittest discover -s tests`, run from the scratch directory root, exits with code 0 and prints `Ran <n> tests` with n at least 4.
 - [ ] The files in `tests/` contain the texts `total`, `apply_discount` and `invalid discount`.
 - [ ] `python3 -c "from cart import Cart; c = Cart(); c.add('box', 100); c.apply_discount(10); assert c.total() == 90"`, run from the scratch directory root, exits with code 0.
 - [ ] `specs/cart/spec.md`, `specs/cart/tasks/T1.md` and `specs/cart/tasks/T2.md` have the exact Setup content.
-- [ ] The final output has a line that contains `T1` and `APPROVED`, and a line that contains `T2` and `APPROVED`.
-- [ ] In `specs/cart/progress.json`, the `note` of `T1` and the `note` of `T2` each start with `APPROVED` and each contain at least 2 names of test functions (`test_...`) that are defined in the files of `tests/` (the reviewer output is recorded; the same name twice counts twice).
+- [ ] The final output has a line that contains `T1`, `APPROVED` and `PASSED`, and a line that contains `T2`, `APPROVED` and `PASSED`.
+- [ ] In `specs/cart/progress.json`, the `review` of `T1` and the `review` of `T2` each start with `APPROVED` and each contain at least 2 names of test functions (`test_...`) that are defined in the files of `tests/` (the reviewer output is recorded; the same name twice counts twice).
+- [ ] In `specs/cart/progress.json`, the `real_testing` of `T1` starts with `PASSED` and contains `B1` and `B2`, and the `real_testing` of `T2` starts with `PASSED` and contains `B3` and `B4` (the real tester output is recorded).
+- [ ] The folders `specs/cart/real-testing/T1/` and `specs/cart/real-testing/T2/` each contain at least one file (what the real tester used or saw).
 
 ## RED baseline (without the skill)
-2026-11-21 — FAIL (3 of 3 runs failed) — run 1 wrote 4 tests and the code but never used the progress tool: both tasks stayed `new` and there was no review. Runs 2 and 3 moved both tasks to `done` with `progress.py` and gave it an `APPROVED` note, because the tool refuses `done` without one, but their final output gave no verdict per task ("The reviews were not independent").
+2026-11-21 — FAIL (3 of 3 runs failed) — the 3 runs wrote the 4 tests then the code in one pass, but never used the progress tool or the agents: both tasks stayed `new`, with no review and no real test ("There was no independent review and no real-user test").
