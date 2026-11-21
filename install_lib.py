@@ -5,10 +5,14 @@ Used by install_claude.py and install_cursor.py:
 <kind> is skill, agent, hook, workflow or mcp-server. Without --project, the project is the current folder.
 A part brings the parts of this repository that its text names by path: `skills/<name>/SKILL.md`,
 `agents/<name>.md`, `hooks/<name>.py`, `mcp-servers/<name>/`. A workflow installs all its components.
+An MCP server that has a `requirements.txt` gets its own Python environment, `mcp-servers/<name>/.venv`,
+with these requirements installed in it. The tool starts the server with the Python of this environment.
 """
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,6 +28,9 @@ FOLDERS = ("skill", "mcp-server")  # These parts are a whole folder. The others 
 # How a text names another part.
 NAMED = {"skill": r"skills/([\w-]+)/SKILL\.md", "agent": r"agents/([\w-]+)\.md",
          "hook": r"hooks/([\w-]+)\.py", "mcp-server": r"mcp-servers/([\w-]+)/"}
+
+# The Python of an environment, from the folder of the environment.
+PYTHON = Path("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 # Cursor continues the agent with a follow-up message, not with exit code 2: this script translates.
 CURSOR_ADAPTER = '''#!/usr/bin/env python3
@@ -92,11 +99,12 @@ def parse(source, text):
 
 
 def kept(folder):
-    """Return the files of a skill or server folder that a project needs: no tests, no caches."""
+    """Return the files of a skill or server folder that a project needs: no tests, no caches, no hidden files."""
     files = []
     for path in sorted(folder.rglob("*")):
         inside = path.relative_to(folder)
-        skipped = {"test", "__pycache__"} & set(inside.parts[:-1]) or path.name.startswith(("test_", "."))
+        skipped = ({"test", "__pycache__"} & set(inside.parts[:-1]) or path.name.startswith("test_")
+                   or any(part.startswith(".") for part in inside.parts))
         if path.is_file() and not skipped:
             files.append(inside)
     return files
@@ -129,9 +137,12 @@ def child(parent, key, empty, path):
 
 
 def plan(tool, source, project, parts):
-    """Return (files, configs, notes): what to write in the project. Writes nothing."""
+    """Return (files, configs, servers): what to write in the project, and the servers that need an environment.
+
+    Writes nothing.
+    """
     home = f".{tool}"
-    files, configs, notes = {}, {}, []
+    files, configs, servers = {}, {}, []
 
     def config(path):
         if path not in configs:
@@ -181,17 +192,19 @@ def plan(tool, source, project, parts):
         elif kind == "mcp-server":
             for inside in kept(path):
                 files[f"mcp-servers/{name}/{inside.as_posix()}"] = (path / inside).read_bytes()
+            python = "python3"
+            if (path / "requirements.txt").exists():
+                servers.append(name)
+                python = f"mcp-servers/{name}/.venv/{PYTHON.as_posix()}"
             if tool == "claude":
-                entry = {"command": "python3", "args": [f"mcp-servers/{name}/server.py"]}
+                entry = {"command": python, "args": [f"mcp-servers/{name}/server.py"]}
             else:
-                entry = {"type": "stdio", "command": "python3",
+                entry = {"type": "stdio", "command": python if python == "python3" else "${workspaceFolder}/" + python,
                          "args": [f"${{workspaceFolder}}/mcp-servers/{name}/server.py"],
                          "env": {name.upper().replace("-", "_") + "_ROOT": "${workspaceFolder}"}}
             path_of_config = ".mcp.json" if tool == "claude" else ".cursor/mcp.json"
             child(config(path_of_config), "mcpServers", {}, path_of_config)[name] = entry
-            if (path / "requirements.txt").exists():
-                notes.append(f"pip install -r mcp-servers/{name}/requirements.txt")
-    return files, configs, notes
+    return files, configs, servers
 
 
 def write(project, path, content, same):
@@ -205,20 +218,45 @@ def write(project, path, content, same):
     return state
 
 
-def install(tool, source, project, wanted):
-    """Install the wanted parts and the parts they name. Return the lines that say what was done."""
+def environment(folder, run):
+    """Give a server folder its Python environment `.venv`, with its requirements installed.
+
+    Return created, updated or unchanged. `.venv/requirements.txt` keeps the requirements that are installed.
+    """
+    venv, wanted = folder / ".venv", (folder / "requirements.txt").read_bytes()
+    python, installed = venv / PYTHON, venv / "requirements.txt"
+    if python.exists() and installed.exists() and installed.read_bytes() == wanted:
+        return "unchanged"
+    state = "updated" if python.exists() else "created"
+    commands = [] if python.exists() else [[sys.executable, "-m", "venv", str(venv)]]
+    commands.append([str(python), "-m", "pip", "install", "-r", str(folder / "requirements.txt")])
+    for command in commands:
+        done = run(command, capture_output=True, text=True)
+        if done.returncode != 0:
+            output = "\n".join((done.stdout + done.stderr).splitlines()[-15:])
+            raise InstallError(f"this command failed (exit {done.returncode}): {' '.join(command)}\n{output}\n"
+                               "The rest is installed. Fix the cause, then run the install again")
+    (venv / ".gitignore").write_text("*\n")
+    installed.write_bytes(wanted)
+    return state
+
+
+def install(tool, source, project, wanted, run=subprocess.run):
+    """Install the wanted parts and the parts they name. Yield one line for each thing done."""
     if not project.is_dir():
         raise InstallError(f"the project folder does not exist: {project}")
     parts = with_named_parts(source, [parse(source, text) for text in wanted])
-    files, configs, notes = plan(tool, source, project, [part for part in parts if part[0] != "workflow"])
-    lines = [f"{write(project, path, content, content.__eq__)} {path}" for path, content in files.items()]
+    files, configs, servers = plan(tool, source, project, [part for part in parts if part[0] != "workflow"])
+    for path, content in files.items():
+        yield f"{write(project, path, content, content.__eq__)} {path}"
     for path, value in configs.items():
         content = (json.dumps(value, indent=2) + "\n").encode()
-        lines.append(f"{write(project, path, content, lambda old, value=value: json.loads(old) == value)} {path}")
-    return lines + [f"Still to do: {note}" for note in notes]
+        yield f"{write(project, path, content, lambda old, value=value: json.loads(old) == value)} {path}"
+    for name in servers:
+        yield f"{environment(project / 'mcp-servers' / name, run)} mcp-servers/{name}/.venv"
 
 
-def main(tool, argv=None, source=None):
+def main(tool, argv=None, source=None, run=subprocess.run):
     source = Path(source or Path(__file__).resolve().parent)
     parser = argparse.ArgumentParser(
         prog=f"install_{tool}.py",
@@ -234,7 +272,8 @@ def main(tool, argv=None, source=None):
             print("\n".join(f"  {kind}/{name}" for name in available(source, kind)))
         return 0
     try:
-        print("\n".join(install(tool, source, Path(options.project).resolve(), options.parts)))
+        for line in install(tool, source, Path(options.project).resolve(), options.parts, run):
+            print(line, flush=True)
     except InstallError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

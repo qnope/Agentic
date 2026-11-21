@@ -39,7 +39,7 @@ A part is `<kind>/<name>`. This is where each kind goes in the project:
 | `skill/<name>` | `.claude/skills/<name>/` | `.cursor/skills/<name>/` |
 | `agent/<name>` | `.claude/agents/<name>.md` | `.cursor/agents/<name>.md` |
 | `hook/<name>` | `hooks/<name>.py`, registered as a `Stop` hook in `.claude/settings.json` | `hooks/<name>.py` and the adapter `.cursor/hooks/<name>.py`, registered as a `stop` hook in `.cursor/hooks.json` |
-| `mcp-server/<name>` | `mcp-servers/<name>/`, registered in `.mcp.json` | `mcp-servers/<name>/`, registered in `.cursor/mcp.json` |
+| `mcp-server/<name>` | `mcp-servers/<name>/` and its Python environment `mcp-servers/<name>/.venv`, registered in `.mcp.json` | `mcp-servers/<name>/` and its Python environment `mcp-servers/<name>/.venv`, registered in `.cursor/mcp.json` |
 | `workflow/<name>` | every component that `workflows/<name>.md` names | the same |
 
 Rules:
@@ -48,9 +48,16 @@ Rules:
 - The tests of a part are not copied (`test/`, `test_*.py`).
 - In the copied skills and agents, the path of an installed skill or agent is rewritten to its place in the project: `agents/tdd-developer.md` becomes `.claude/agents/tdd-developer.md`.
 - In a config file that already exists, the script adds or updates the entry of the part and keeps every other setting. A hook is registered once.
-- You can run the script again, for example after an update of this repository. Each line of its output says `created`, `updated` or `unchanged` for one file.
+- You can run the script again, for example after an update of this repository. Each line of its output says `created`, `updated` or `unchanged` for one file or one Python environment.
 - If a part is unknown or a config file is not valid JSON, the script writes nothing and exits with code 1.
-- The script installs no Python package. It prints the command to run, for example `pip install -r mcp-servers/tdd-progress/requirements.txt`.
+
+Python environment of an MCP server:
+
+- When the server has a `requirements.txt`, the script creates the virtual environment `mcp-servers/<name>/.venv` with `python -m venv`, then runs `pip install -r requirements.txt` in it. It uses the Python that runs the script.
+- The config file starts the server with the Python of this environment. Nothing is installed in your own Python. A server without `requirements.txt` gets no environment and starts with `python3`.
+- When you run the script again, an environment whose requirements did not change is left as it is (`unchanged`). If `requirements.txt` changed, the script runs `pip install` again in the same environment (`updated`).
+- If the environment cannot be created or `pip` fails (no network, for example), the script prints the command that failed and its output, and exits with code 1. The rest is installed. Run the script again when the cause is fixed.
+- The environment holds a `.gitignore`, so git does not see it. It is not copied from one machine to another: run the script on each machine.
 
 Limits:
 
