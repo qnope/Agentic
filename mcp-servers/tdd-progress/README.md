@@ -49,6 +49,15 @@ specs/<feature>/
 - `create` refuses a duplicate id, an unknown dependency, a dependency cycle, and a feature that has already started.
 - `verify` looks at every feature that is `open` and has at least one task out of `new`. It fails while a task is not `done` or the test command fails. When both checks pass, the feature becomes `closed`.
 
+## Git
+
+These rules apply when the project root is the top folder of a git repository and is on a branch. In any other project, the tool runs no git command and the rules above do not change.
+
+- **One branch per feature.** `new -> dev` on the default branch creates the branch `feature/<feature>` and switches to it. The default branch is the one that `origin/HEAD` names, else `main` or `master`. On any other branch, the tool stays on it. The move is refused when the branch cannot be created.
+- **One commit per task.** `real-testing -> done` commits every change of the project, with the message `<feature> <task id>: <title>` (example: `login T1: Reject an empty password`). The result has `commit`: the short hash. The move is refused while the commit fails (a pre-commit hook that fails, for example): the task stays `real-testing`.
+- **One commit for the end.** When a feature becomes `closed`, the tool commits `progress.json` alone, with the message `<feature>: closed`.
+- **One pull request per feature.** `pr` closes the feature as `verify` does, pushes its branch to `origin`, then opens the pull request with the GitHub command line: `gh pr create`. The title is the feature name. The body lists the tasks and the test command. It is refused when a task is not `done`, the test command fails, the branch is the default branch of `origin`, the push fails or `gh` fails. When only `gh` fails, the branch is pushed: open the pull request by hand.
+
 ## MCP tools
 
 | Tool | Does |
@@ -56,6 +65,7 @@ specs/<feature>/
 | `progress_create(feature, test_command, tasks)` | Creates `progress.json`, every task `new`. |
 | `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev`, `review` and `real-testing`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
 | `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the output of the reviewer or of the real tester: required for `real-testing`, for `done` and for a rejection. |
+| `progress_pull_request(feature)` | Closes a finished feature, pushes its branch and opens its pull request. The result has `branch` and `url`. |
 | `progress_status(feature)` | Gives the summary and the dashboard (see below) of one feature. With no name: of every feature. |
 
 Register the server in your tool with this command, started from the project root:
@@ -82,6 +92,7 @@ python3 mcp-servers/tdd-progress/progress.py next <feature>
 python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|real-testing|done> [--note "<agent output>"]
 python3 mcp-servers/tdd-progress/progress.py status [<feature>] [--json]
 python3 mcp-servers/tdd-progress/progress.py verify
+python3 mcp-servers/tdd-progress/progress.py pr <feature>
 ```
 
 `tasks.json` is a list: `[{"id": "T1", "title": "...", "depends_on": []}]`. Every command prints JSON and exits `0`, except `status`: it prints the dashboard, and the summary as JSON with `--json`. A refusal prints `ERROR: <reason>` on standard error and exits `1`. `verify` prints `{}` and exits `0`, or prints one `FAIL:` line per problem and exits `1`.

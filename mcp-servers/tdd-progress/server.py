@@ -18,7 +18,8 @@ server = MCPServer("tdd-progress", log_level="WARNING", instructions=(
     "Tracks the tasks of a feature in specs/<feature>/progress.json. "
     "A task goes new -> dev -> review -> real-testing -> done; "
     "a review or a real test can send it back to dev. "
-    "Never edit progress.json by hand: use these tools."
+    "Never edit progress.json by hand: use these tools. "
+    "In a git repository, the tools commit each done task and open the pull request of a finished feature."
 ))
 
 
@@ -66,15 +67,31 @@ def progress_update(feature: str, task_id: str, status: Literal["dev", "review",
                     note: str = "") -> dict:
     """Move one task to its next status. Any other move is refused, with the reason.
 
-    new -> dev: needs every dependency done. dev -> review. review -> real-testing: note
-    is required and holds the reviewer output, whose first line is APPROVED.
+    new -> dev: needs every dependency done; in a git repository on the default branch,
+    the tool first creates the branch feature/<feature>. dev -> review. review ->
+    real-testing: note is required and holds the reviewer output, whose first line is APPROVED.
     real-testing -> done: note is required and holds the real tester output, whose first
-    line is PASSED; the tool then runs the test command, refused while it fails.
+    line is PASSED; the tool then runs the test command, refused while it fails; then it
+    commits every change of the project with the message "<feature> <task id>: <title>",
+    refused while the commit fails. The result has commit: its short hash, or "" when the
+    project is not in git.
     review -> dev or real-testing -> dev: the task is rejected, note is required and
     holds the remarks. The result has escalate: true when the task was rejected 3 times:
     stop and ask the human partner.
     """
     return call(progress.update, feature, task_id, status, note)
+
+
+@server.tool()
+def progress_pull_request(feature: str) -> dict:
+    """Close a finished feature, push its branch and open its pull request.
+
+    The result has branch and url. Refused, with the reason, when: a task is not done,
+    the test command fails, the project is not on a branch of a git repository, the
+    branch is the default branch of the remote origin, the push fails, or the GitHub
+    command line `gh` cannot open the pull request.
+    """
+    return call(progress.pull_request, feature)
 
 
 @server.tool()

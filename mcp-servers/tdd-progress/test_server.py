@@ -39,9 +39,10 @@ class ServerTest(unittest.TestCase):
     def call(self, *calls):
         return asyncio.run(session(server.server, calls))
 
-    def test_exposes_the_four_tools(self):
+    def test_exposes_the_five_tools(self):
         names, _ = self.call()
-        self.assertEqual(names, ["progress_create", "progress_next", "progress_status", "progress_update"])
+        self.assertEqual(names, ["progress_create", "progress_next", "progress_pull_request", "progress_status",
+                                 "progress_update"])
 
     def test_runs_a_task_from_new_to_done(self):
         _, results = self.call(
@@ -69,23 +70,26 @@ class ServerTest(unittest.TestCase):
             ])
         stored = json.loads((self.root / "specs" / "login" / "progress.json").read_text())
         self.assertEqual([task["status"] for task in stored["tasks"]], ["done", "new"])
+        self.assertEqual(json.loads(text(results[5]))["commit"], "")
 
     def test_refused_move_returns_the_reason(self):
         _, results = self.call(
             ("progress_create", CREATE),
             ("progress_update", {"feature": "login", "task_id": "T1", "status": "review"}),
             ("progress_update", {"feature": "login", "task_id": "T2", "status": "dev"}),
+            ("progress_pull_request", {"feature": "login"}),
         )
-        self.assertEqual([result.is_error for result in results], [False, True, True])
+        self.assertEqual([result.is_error for result in results], [False, True, True, True])
         self.assertIn("allowed: dev", text(results[1]))
         self.assertIn("not done: T1", text(results[2]))
+        self.assertIn("login: task T1 is 'new', not 'done'", text(results[3]))
 
     def test_works_as_a_real_process_over_stdio(self):
         script = str(Path(server.__file__).resolve())
         process = StdioServerParameters(command=sys.executable, args=[script], cwd=str(self.root),
                                         env={k: v for k, v in os.environ.items() if k != "TDD_PROGRESS_ROOT"})
         names, results = asyncio.run(session(process, [("progress_create", CREATE)]))
-        self.assertEqual(len(names), 4)
+        self.assertEqual(len(names), 5)
         self.assertFalse(results[0].is_error)
         self.assertTrue((self.root / "specs" / "login" / "progress.json").exists())
 
