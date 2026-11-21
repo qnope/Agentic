@@ -61,7 +61,7 @@ class CartTest(unittest.TestCase):
 - [ ] `python3 -m unittest discover -s tests`, run from the scratch directory root, exits with code 0 and prints `Ran <n> tests` with n at least 4.
 - [ ] With `cart.py` put back to its exact Setup content, the same command exits with a code other than 0 (a new test fails on the bug). Put the fixed `cart.py` back after this check.
 - [ ] `python3 -c "from cart import Cart; c = Cart(); c.add('pen', 2); c.add('pen', 2); c.remove('pen'); assert c.total() == 2"`, run from the scratch directory root, exits with code 0.
-- [ ] `python3 mcp-servers/tdd-progress/progress.py status`, run from the scratch directory root, exits with code 0 and shows exactly one feature, with 1 task under `done` and 0 task under `new`, `dev`, `review` and `real-testing`.
+- [ ] `python3 mcp-servers/tdd-progress/progress.py status --json`, run from the scratch directory root, exits with code 0 and shows exactly one feature, with 1 task under `done` and 0 task under `new`, `dev`, `review` and `real-testing`.
 - [ ] The `progress.json` of this feature is byte-identical to its own content written again with `json.dumps(data, indent=2) + "\n"` (this is the layout the tool writes).
 - [ ] In this `progress.json`, the `review` of `T1` starts with `APPROVED` and the `real_testing` of `T1` starts with `PASSED`.
 
