@@ -15,6 +15,8 @@ TASKS = [
 ]
 PASS, FAIL = (0, "all green"), (1, "test_lock ... FAILED")
 REVIEW = "APPROVED\n- test_rejects_empty_password"
+REAL_TEST = "PASSED\n- B1: ran the program with an empty password -> it printed 'password required'"
+NOTES = {"real-testing": REVIEW, "done": REAL_TEST}
 
 
 class Base(unittest.TestCase):
@@ -26,11 +28,16 @@ class Base(unittest.TestCase):
     def create(self, feature="login", tasks=TASKS, command="run-tests"):
         return progress.create(self.root, feature, command, tasks)
 
-    def move(self, task_id, *statuses, feature="login", note=REVIEW, tests=PASS):
+    def move(self, task_id, *statuses, feature="login", note=None, tests=PASS):
+        """Move a task through the statuses. Without a note, each status gets the output it needs."""
         with patch.object(progress, "run_tests", return_value=tests) as run:
             for status in statuses:
-                result = progress.update(self.root, feature, task_id, status, note)
+                text = NOTES.get(status, "") if note is None else note
+                result = progress.update(self.root, feature, task_id, status, text)
         return result, run
+
+    def finish(self, task_id, **options):
+        return self.move(task_id, "dev", "review", "real-testing", "done", **options)
 
     def stored(self, feature="login"):
         return json.loads((self.root / "specs" / feature / "progress.json").read_text())
@@ -90,20 +97,23 @@ class NextTest(Base):
 
     def test_dependent_task_becomes_ready_and_feature_finishes(self):
         self.create()
-        self.move("T1", "dev", "review", "done")
+        self.finish("T1")
         self.move("T2", "dev", "review")
         result = progress.next_tasks(self.root, "login")
         self.assertEqual((result["ready"], [t["id"] for t in result["review"]]), ([], ["T2"]))
+        self.move("T2", "real-testing")
+        result = progress.next_tasks(self.root, "login")
+        self.assertEqual((result["review"], [t["id"] for t in result["real-testing"]]), ([], ["T2"]))
         self.move("T2", "done")
         self.assertEqual([t["id"] for t in progress.next_tasks(self.root, "login")["ready"]], ["T3"])
-        self.move("T3", "dev", "review", "done")
+        self.finish("T3")
         self.assertTrue(progress.next_tasks(self.root, "login")["finished"])
 
 
 class UpdateTest(Base):
-    def test_follows_new_dev_review_done(self):
+    def test_follows_new_dev_review_real_testing_done(self):
         self.create()
-        result, run = self.move("T1", "dev", "review", "done")
+        result, run = self.finish("T1")
         self.assertEqual(result["status"], "done")
         self.assertEqual(self.stored()["tasks"][0]["status"], "done")
         run.assert_called_once_with("run-tests", self.root)
@@ -112,29 +122,42 @@ class UpdateTest(Base):
         self.create()
         self.refused("allowed: dev", self.move, "T1", "review")
         self.refused("allowed: dev", self.move, "T1", "done")
-        self.move("T1", "dev", "review", "done")
+        self.move("T1", "dev", "review")
+        self.refused("allowed: real-testing, dev", self.move, "T1", "done")
+        self.move("T1", "real-testing", "done")
         self.refused("allowed: none", self.move, "T1", "dev")
 
     def test_refuses_dev_while_a_dependency_is_not_done(self):
         self.create()
-        self.move("T1", "dev", "review", "done")
+        self.finish("T1")
         self.refused("T2", self.move, "T3", "dev")
         self.assertEqual(self.stored()["tasks"][2]["status"], "new")
 
-    def test_done_needs_the_reviewer_output_and_keeps_it(self):
+    def test_real_testing_needs_the_reviewer_output_and_keeps_it(self):
         self.create()
         self.move("T1", "dev", "review")
-        self.refused("APPROVED", self.move, "T1", "done", note="")
-        self.refused("APPROVED", self.move, "T1", "done", note="Looks fine.")
+        self.refused("APPROVED", self.move, "T1", "real-testing", note="")
+        self.refused("APPROVED", self.move, "T1", "real-testing", note="Looks fine.")
         self.assertEqual(self.stored()["tasks"][0]["status"], "review")
+        _, run = self.move("T1", "real-testing")
+        self.assertEqual(self.stored()["tasks"][0]["review"], REVIEW)
+        run.assert_not_called()
+
+    def test_done_needs_the_real_tester_output_and_keeps_it(self):
+        self.create()
+        self.move("T1", "dev", "review", "real-testing")
+        self.refused("PASSED", self.move, "T1", "done", note="")
+        self.refused("PASSED", self.move, "T1", "done", note=REVIEW)
+        self.assertEqual(self.stored()["tasks"][0]["status"], "real-testing")
         self.move("T1", "done")
-        self.assertEqual(self.stored()["tasks"][0]["note"], REVIEW)
+        task = self.stored()["tasks"][0]
+        self.assertEqual((task["review"], task["real_testing"], task["note"]), (REVIEW, REAL_TEST, ""))
 
     def test_refuses_done_while_the_tests_fail(self):
         self.create()
-        self.move("T1", "dev", "review")
+        self.move("T1", "dev", "review", "real-testing")
         self.refused("test_lock ... FAILED", self.move, "T1", "done", tests=FAIL)
-        self.assertEqual(self.stored()["tasks"][0]["status"], "review")
+        self.assertEqual(self.stored()["tasks"][0]["status"], "real-testing")
 
     def test_rejection_needs_a_note_and_escalates_at_the_third(self):
         self.create()
@@ -144,7 +167,10 @@ class UpdateTest(Base):
         self.assertEqual((result["rejections"], result["escalate"]), (1, False))
         self.assertEqual(self.stored()["tasks"][0]["note"], "No test for the empty string.")
         run.assert_not_called()
-        self.move("T1", "review", "dev", note="Still missing.")
+        self.move("T1", "review", "real-testing")
+        self.refused("note", self.move, "T1", "dev", note="")
+        result, _ = self.move("T1", "dev", note="The program prints nothing.")
+        self.assertEqual((result["rejections"], result["note"]), (2, "The program prints nothing."))
         result, _ = self.move("T1", "review", "dev", note="Still missing.")
         self.assertEqual((result["rejections"], result["escalate"]), (3, True))
         self.assertEqual([t["id"] for t in progress.next_tasks(self.root, "login")["escalated"]], ["T1"])
@@ -159,10 +185,10 @@ class UpdateTest(Base):
 class StatusTest(Base):
     def test_counts_and_remaining(self):
         self.create()
-        self.move("T1", "dev", "review", "done")
+        self.finish("T1")
         self.move("T2", "dev")
         result = progress.status(self.root, "login")
-        self.assertEqual(result["counts"], {"new": 1, "dev": 1, "review": 0, "done": 1})
+        self.assertEqual(result["counts"], {"new": 1, "dev": 1, "review": 0, "real-testing": 0, "done": 1})
         self.assertEqual((result["remaining"], result["finished"], result["status"]), (["T2", "T3"], False, "open"))
         self.assertEqual(result["tasks"], {"T1": "done", "T2": "dev", "T3": "new"})
 
@@ -200,7 +226,7 @@ class VerifyTest(Base):
 
     def test_closes_the_feature_when_all_done_and_tests_pass(self):
         self.create(tasks=TASKS[:1])
-        self.move("T1", "dev", "review", "done")
+        self.finish("T1")
         self.assertEqual(self.verify()[0], [])
         self.assertEqual(self.stored()["status"], "closed")
         self.verify()[1].assert_not_called()
@@ -208,7 +234,7 @@ class VerifyTest(Base):
 
     def test_reports_failing_tests_and_keeps_the_feature_open(self):
         self.create(tasks=TASKS[:1])
-        self.move("T1", "dev", "review", "done")
+        self.finish("T1")
         lines, _ = self.verify(tests=FAIL)
         self.assertEqual(lines[0], "FAIL: login: test command failed: run-tests")
         self.assertIn("test_lock ... FAILED", lines[1])
@@ -241,12 +267,13 @@ class CommandLineTest(Base):
         self.run_cli("create", "login", "--test-command", "echo boom && exit 3", stdin=json.dumps(TASKS[:1]))
         self.run_cli("update", "login", "T1", "dev")
         self.run_cli("update", "login", "T1", "review")
-        code, _, err = self.run_cli("update", "login", "T1", "done", "--note", REVIEW)
+        self.run_cli("update", "login", "T1", "real-testing", "--note", REVIEW)
+        code, _, err = self.run_cli("update", "login", "T1", "done", "--note", REAL_TEST)
         self.assertEqual(code, 1)
         self.assertIn("boom", err)
         code, out, _ = self.run_cli("verify")
         self.assertEqual(code, 1)
-        self.assertIn("FAIL: login: task T1 is 'review', not 'done'", out)
+        self.assertIn("FAIL: login: task T1 is 'real-testing', not 'done'", out)
 
 
 if __name__ == "__main__":

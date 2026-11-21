@@ -16,7 +16,8 @@ import progress
 
 server = MCPServer("tdd-progress", log_level="WARNING", instructions=(
     "Tracks the tasks of a feature in specs/<feature>/progress.json. "
-    "A task goes new -> dev -> review -> done; a review can send it back to dev. "
+    "A task goes new -> dev -> review -> real-testing -> done; "
+    "a review or a real test can send it back to dev. "
     "Never edit progress.json by hand: use these tools."
 ))
 
@@ -52,7 +53,7 @@ def progress_create(feature: str, test_command: str, tasks: list[Task]) -> dict:
 def progress_next(feature: str) -> dict:
     """List what to work on in a feature.
 
-    ready: new tasks whose dependencies are all done. dev, review: tasks in progress.
+    ready: new tasks whose dependencies are all done. dev, review, real-testing: tasks in progress.
     escalated: tasks rejected 3 times, the human partner decides. waiting: ids of new
     tasks with an unfinished dependency. finished: true when every task is done.
     test_command: the command that runs all the tests.
@@ -61,14 +62,17 @@ def progress_next(feature: str) -> dict:
 
 
 @server.tool()
-def progress_update(feature: str, task_id: str, status: Literal["dev", "review", "done"], note: str = "") -> dict:
+def progress_update(feature: str, task_id: str, status: Literal["dev", "review", "real-testing", "done"],
+                    note: str = "") -> dict:
     """Move one task to its next status. Any other move is refused, with the reason.
 
-    new -> dev: needs every dependency done. dev -> review. review -> done: note is
-    required and holds the reviewer output, whose first line is APPROVED; the tool then
-    runs the test command, refused while it fails. review -> dev: the review rejected
-    the task, note is required and holds the review remarks. The result has
-    escalate: true when the task was rejected 3 times: stop and ask the human partner.
+    new -> dev: needs every dependency done. dev -> review. review -> real-testing: note
+    is required and holds the reviewer output, whose first line is APPROVED.
+    real-testing -> done: note is required and holds the real tester output, whose first
+    line is PASSED; the tool then runs the test command, refused while it fails.
+    review -> dev or real-testing -> dev: the task is rejected, note is required and
+    holds the remarks. The result has escalate: true when the task was rejected 3 times:
+    stop and ask the human partner.
     """
     return call(progress.update, feature, task_id, status, note)
 

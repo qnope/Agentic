@@ -49,15 +49,17 @@ class ServerTest(unittest.TestCase):
             ("progress_next", {"feature": "login"}),
             ("progress_update", {"feature": "login", "task_id": "T1", "status": "dev"}),
             ("progress_update", {"feature": "login", "task_id": "T1", "status": "review"}),
-            ("progress_update", {"feature": "login", "task_id": "T1", "status": "done",
+            ("progress_update", {"feature": "login", "task_id": "T1", "status": "real-testing",
                                  "note": "APPROVED\n- test_rejects_empty_password"}),
+            ("progress_update", {"feature": "login", "task_id": "T1", "status": "done",
+                                 "note": "PASSED\n- B1: ran the program with an empty password -> it refused"}),
             ("progress_status", {"feature": "login"}),
             ("progress_status", {}),
         )
         self.assertFalse(any(result.is_error for result in results))
         self.assertEqual([task["id"] for task in json.loads(text(results[1]))["ready"]], ["T1"])
-        self.assertEqual(json.loads(text(results[5]))["remaining"], ["T2"])
-        self.assertEqual(json.loads(text(results[6]))["features"][0]["feature"], "login")
+        self.assertEqual(json.loads(text(results[6]))["remaining"], ["T2"])
+        self.assertEqual(json.loads(text(results[7]))["features"][0]["feature"], "login")
         stored = json.loads((self.root / "specs" / "login" / "progress.json").read_text())
         self.assertEqual([task["status"] for task in stored["tasks"]], ["done", "new"])
 

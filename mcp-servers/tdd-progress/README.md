@@ -28,7 +28,9 @@ specs/<feature>/
   "test_command": "cmake --build build && ctest --test-dir build",
   "tasks": [
     {"id": "T1", "title": "Reject an empty password", "file": "tasks/T1.md",
-     "depends_on": [], "status": "done", "rejections": 0, "note": ""},
+     "depends_on": [], "status": "done", "rejections": 0, "note": "",
+     "review": "APPROVED\n- test_rejects_empty_password",
+     "real_testing": "PASSED\n- B1: ran the program with an empty password -> it printed 'password required'"},
     {"id": "T2", "title": "Lock after 3 failures", "file": "tasks/T2.md",
      "depends_on": ["T1"], "status": "new", "rejections": 0, "note": ""}
   ]
@@ -37,10 +39,11 @@ specs/<feature>/
 
 ## Rules
 
-- A task goes `new -> dev -> review -> done`. A review can send it back: `review -> dev`. Any other move is refused.
+- A task goes `new -> dev -> review -> real-testing -> done`. A review or a real test can send it back: `review -> dev`, `real-testing -> dev`. Any other move is refused.
 - `new -> dev` is refused while a task of `depends_on` is not `done`.
-- `review -> done` needs the reviewer output as note: its first line is `APPROVED`. The note is kept in the task. The move then runs `test_command` from the project root. It is refused while the command fails.
-- `review -> dev` needs a note (the review remarks). It adds 1 to `rejections`. At 3 rejections the task is escalated: the human partner decides.
+- `review -> real-testing` needs the reviewer output as note: its first line is `APPROVED`. It is kept in the field `review` of the task.
+- `real-testing -> done` needs the real tester output as note: its first line is `PASSED`. It is kept in the field `real_testing` of the task. The move then runs `test_command` from the project root. It is refused while the command fails.
+- `review -> dev` and `real-testing -> dev` need a note (the remarks). It is kept in the field `note` of the task and adds 1 to `rejections`. At 3 rejections the task is escalated: the human partner decides.
 - `create` refuses a duplicate id, an unknown dependency, a dependency cycle, and a feature that has already started.
 - `verify` looks at every feature that is `open` and has at least one task out of `new`. It fails while a task is not `done` or the test command fails. When both checks pass, the feature becomes `closed`.
 
@@ -49,8 +52,8 @@ specs/<feature>/
 | Tool | Does |
 |---|---|
 | `progress_create(feature, test_command, tasks)` | Creates `progress.json`, every task `new`. |
-| `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev` and `review`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
-| `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the reviewer output: required for `done` and for a rejection. |
+| `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev`, `review` and `real-testing`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
+| `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the output of the reviewer or of the real tester: required for `real-testing`, for `done` and for a rejection. |
 | `progress_status(feature)` | Counts the tasks per status and gives the status of each task. With no name: every feature. |
 
 Register the server in your tool with this command, started from the project root:
@@ -74,7 +77,7 @@ Same operations, same rules, no dependency. The stop hook `hooks/tdd_gate.py` ru
 ```
 python3 mcp-servers/tdd-progress/progress.py create <feature> --test-command "<command>" --tasks tasks.json
 python3 mcp-servers/tdd-progress/progress.py next <feature>
-python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|done> [--note "<reviewer output>"]
+python3 mcp-servers/tdd-progress/progress.py update <feature> <task> <dev|review|real-testing|done> [--note "<agent output>"]
 python3 mcp-servers/tdd-progress/progress.py status [<feature>]
 python3 mcp-servers/tdd-progress/progress.py verify
 ```
@@ -89,7 +92,7 @@ Example with Claude Code. Run the commands from the root of your project. `A` is
 A=/path/to/Agentic
 mkdir -p .claude/skills .claude/agents hooks mcp-servers
 cp -r $A/skills/tdd-elaborate $A/skills/tdd-plan $A/skills/tdd-implement .claude/skills/
-cp $A/agents/tdd-developer.md $A/agents/tdd-reviewer.md .claude/agents/
+cp $A/agents/tdd-developer.md $A/agents/tdd-reviewer.md $A/agents/tdd-real-tester.md .claude/agents/
 cp $A/hooks/tdd_gate.py hooks/
 cp -r $A/mcp-servers/tdd-progress mcp-servers/
 pip install -r mcp-servers/tdd-progress/requirements.txt

@@ -2,7 +2,7 @@
 """Deterministic progress tracking for the tdd-loop workflow. Standard library only.
 
 One feature = one folder `specs/<feature>/` holding `spec.md`, `tasks/` and `progress.json`.
-A task goes new -> dev -> review -> done. A review can send it back to dev.
+A task goes new -> dev -> review -> real-testing -> done. A review or a real test can send it back to dev.
 """
 import argparse
 import json
@@ -12,7 +12,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-NEXT = {"new": ("dev",), "dev": ("review",), "review": ("done", "dev"), "done": ()}
+NEXT = {"new": ("dev",), "dev": ("review",), "review": ("real-testing", "dev"),
+        "real-testing": ("done", "dev"), "done": ()}
+# A forward move out of a checking status needs the output of its agent: (first line, field that keeps it).
+PROOF = {"real-testing": ("APPROVED", "review"), "done": ("PASSED", "real_testing")}
 MAX_REJECTIONS = 3
 NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
@@ -120,7 +123,7 @@ def next_tasks(root, feature):
     """Say what to work on: `ready` lists the new tasks whose dependencies are all done."""
     data = _load(root, feature)
     result = {"feature": feature, "test_command": data["test_command"],
-              "ready": [], "dev": [], "review": [], "escalated": [], "waiting": []}
+              "ready": [], "dev": [], "review": [], "real-testing": [], "escalated": [], "waiting": []}
     for task in data["tasks"]:
         if task["status"] == "new":
             if _unfinished_dependencies(data, task):
@@ -150,18 +153,20 @@ def update(root, feature, task_id, status, note=""):
         blockers = _unfinished_dependencies(data, task)
         if blockers:
             raise ProgressError(f"task '{task_id}' depends on tasks that are not done: {', '.join(blockers)}")
-    elif status == "done":
-        if not note.strip().startswith("APPROVED"):
-            raise ProgressError(f"task '{task_id}' stays in review: 'done' needs the reviewer output "
-                                "as note, and its first line is APPROVED")
-        code, output = run_tests(data["test_command"], Path(root))
-        if code != 0:
-            raise ProgressError(f"task '{task_id}' stays in review: the test command failed "
-                                f"(exit {code}): {data['test_command']}\n{output[-2000:]}")
-        task["note"] = note.strip()
-    elif task["status"] == "review":
+    elif status in PROOF:
+        word, field = PROOF[status]
+        if not note.strip().startswith(word):
+            raise ProgressError(f"task '{task_id}' stays in {task['status']}: '{status}' needs the output of "
+                                f"the {task['status']} agent as note, and its first line is {word}")
+        if status == "done":
+            code, output = run_tests(data["test_command"], Path(root))
+            if code != 0:
+                raise ProgressError(f"task '{task_id}' stays in {task['status']}: the test command failed "
+                                    f"(exit {code}): {data['test_command']}\n{output[-2000:]}")
+        task[field] = note.strip()
+    elif status == "dev":
         if not note.strip():
-            raise ProgressError("a task sent back to dev needs a note with the review remarks")
+            raise ProgressError("a task sent back to dev needs a note with the remarks")
         task["rejections"] += 1
         task["note"] = note.strip()
     task["status"] = status
