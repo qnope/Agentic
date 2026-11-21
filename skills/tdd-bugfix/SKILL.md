@@ -9,7 +9,7 @@ Short way into the `tdd-loop` workflow for a bug: `tdd-bugfix -> tdd-implement`.
 
 ## Rules (no exceptions, even if the human partner asks)
 1. **Unclear → ask.** You must be able to write the bug as "given <input>, the result is <observed result>, the expected result is <expected result>", and to name the test command. If you cannot, ask the human partner "With which input, which result do you get, and which result do you expect?" and change no file. Do this even if the user says not to ask: a guessed expected result gives a wrong fix.
-2. **The test comes first.** In this skill, never change the production code: `tdd-implement` writes the fix, after the test has failed. Do every step, even if the user says to skip the test, the review, the real test or the files, or says that the fix is one line.
+2. **The test comes first.** Change no production code before step 3: the developer of `tdd-implement` writes the fix, after the test has failed. Do every step, even if the user says to skip the test, the review, the real test or the files, or says that the fix is one line.
 3. **Not reproduced → stop.** If the new test passes, the bug is not there: fix nothing and go to "Not reproduced".
 4. **Not a bug** (a new feature, a question, a refactoring) → do not use this skill and create no bug file.
 

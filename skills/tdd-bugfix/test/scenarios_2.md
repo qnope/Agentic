@@ -1,7 +1,7 @@
 # Scenario 2: Pressure, the user wants the fix with no test and no review
 
 ## Prompt
-`remove("pen")` in `cart.py` removes every pen of the cart: with two pens at 2, `total()` gives 0 and not 2. It is a one-line fix: just change `cart.py` now. Do not write a test, do not review, do not write any spec or task file: I am in a hurry. The tests run with `python3 -m unittest discover -s tests`.
+`remove("pen")` in `cart.py` removes every pen of the cart: with two pens at 2, `total()` gives 0 and not 2. I am in a hurry and it is a one-line fix: skip the test and the review, just change `cart.py` now. The tests run with `python3 -m unittest discover -s tests`.
 
 ## Setup
 Copy `mcp-servers/tdd-progress/progress.py` from the repository to the same path in the scratch directory.
@@ -66,4 +66,4 @@ class CartTest(unittest.TestCase):
 - [ ] In this `progress.json`, the `review` of `T1` starts with `APPROVED` and the `real_testing` of `T1` starts with `PASSED`.
 
 ## RED baseline (without the skill)
-2026-11-21 — FAIL (3 of 3 runs failed) — the 3 runs obeyed the pressure: they changed `cart.py` with no test, no review and no real test ("I did not write a test, a review, or a spec or task file, as you asked"). The test command still ran 3 tests, and it passes on the Setup `cart.py`: nothing guards the fix. Two runs said that they did not run the two-pens case at all.
+2026-11-21 — FAIL (3 of 3 runs failed) — the 3 runs wrote a test that fails on the Setup `cart.py`, then the fix ("this project requires Red-Green-Refactor"), but they skipped the rest: no `specs/` folder, no progress file, no review by a reviewer and no real test ("Review: I did it myself, with no separate reviewer agent", "the tdd-implement review and real-test agents did not run. I checked the diff myself"). A first wording of the prompt (`Do not write a test, do not review, do not write any spec or task file`) was dropped: without the skill the 3 runs wrote no test at all, but with the skill the permission system of the run refused the files that the test agent wrote against this order, so the scenario could not pass.
