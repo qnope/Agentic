@@ -5,7 +5,7 @@ Deterministic progress tracking for the `tdd-loop` workflow. It decides, with no
 | File | Role |
 |---|---|
 | `progress.py` | The rules and a command line. Standard library only. |
-| `server.py` | MCP server (stdio) that exposes the same operations. Needs `pip install -r requirements.txt`. |
+| `server.py` | MCP server (stdio) that exposes the same operations. Needs the packages of `requirements.txt`: the install script puts them in `.venv`. |
 | `test_progress.py`, `test_server.py` | Unit tests: `python3 -m unittest discover -s mcp-servers/tdd-progress`. |
 
 ## Data
@@ -93,10 +93,9 @@ Run these commands from the root of your project. `A` is the path of this reposi
 ```
 A=/path/to/Agentic
 $A/install_claude.py workflow/tdd-loop
-pip install -r mcp-servers/tdd-progress/requirements.txt
 ```
 
-The script copies the three skills, the three agents, the stop hook and this server into the project, and registers the server and the hook in the config files of the tool. The file `README.md` at the root of this repository gives the details.
+The script copies the three skills, the three agents, the stop hook and this server into the project, and registers the server and the hook in the config files of the tool. It also creates the Python environment `mcp-servers/tdd-progress/.venv`, installs `requirements.txt` in it, and makes the tool start the server with it. The file `README.md` at the root of this repository gives the details.
 
 Start the tool in the project. Accept the MCP server `tdd-progress` and the hook when it asks. Then:
 

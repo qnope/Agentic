@@ -30,8 +30,25 @@ sys.exit(0 if '"stop_hook_active": true' in sys.stdin.read() else 2)
 """
 
 
+class FakeRun:
+    """Stands for subprocess.run: keeps the commands, and creates the python of a new environment."""
+
+    def __init__(self):
+        self.commands, self.failing = [], None
+
+    def __call__(self, command, **options):
+        self.commands.append(command)
+        if command[1:3] == ["-m", "venv"]:
+            python = Path(command[3]) / install_lib.PYTHON
+            python.parent.mkdir(parents=True)
+            python.write_text("")
+        failed = self.failing in command if self.failing else False
+        return subprocess.CompletedProcess(command, 1 if failed else 0, "", "no network" if failed else "")
+
+
 class Base(unittest.TestCase):
     def setUp(self):
+        self.run_command = FakeRun()
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.source, self.project = Path(folder.name) / "repo", Path(folder.name) / "project"
@@ -50,11 +67,14 @@ class Base(unittest.TestCase):
     def install(self, tool, *parts, project=None):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = install_lib.main(tool, [*parts, "--project", str(project or self.project)], source=self.source)
+            code = install_lib.main(tool, [*parts, "--project", str(project or self.project)], source=self.source,
+                                    run=self.run_command)
         return code, out.getvalue(), err.getvalue()
 
     def files(self):
-        return sorted(str(p.relative_to(self.project)) for p in self.project.rglob("*") if p.is_file())
+        """The files of the project, without the Python environments."""
+        return sorted(str(p.relative_to(self.project)) for p in self.project.rglob("*")
+                      if p.is_file() and ".venv" not in p.parts)
 
     def json(self, path):
         return json.loads((self.project / path).read_text())
@@ -69,8 +89,8 @@ class ClaudeTest(Base):
             "mcp-servers/tracker/requirements.txt", "mcp-servers/tracker/server.py", "mcp-servers/tracker/tool.py",
         ])
         self.assertEqual(self.json(".mcp.json"), {"mcpServers": {"tracker": {
-            "command": "python3", "args": ["mcp-servers/tracker/server.py"]}}})
-        self.assertIn("pip install -r mcp-servers/tracker/requirements.txt", out)
+            "command": "mcp-servers/tracker/.venv/bin/python", "args": ["mcp-servers/tracker/server.py"]}}})
+        self.assertIn("created mcp-servers/tracker/.venv", out)
 
     def test_agent_alone(self):
         self.assertEqual(self.install("claude", "agent/other")[0], 0)
@@ -167,7 +187,8 @@ class CursorTest(Base):
             "mcp-servers/tracker/tool.py",
         ])
         self.assertEqual(self.json(".cursor/mcp.json"), {"mcpServers": {"tracker": {
-            "type": "stdio", "command": "python3", "args": ["${workspaceFolder}/mcp-servers/tracker/server.py"],
+            "type": "stdio", "command": "${workspaceFolder}/mcp-servers/tracker/.venv/bin/python",
+            "args": ["${workspaceFolder}/mcp-servers/tracker/server.py"],
             "env": {"TRACKER_ROOT": "${workspaceFolder}"}}}})
         self.assertEqual(self.json(".cursor/hooks.json"), {
             "version": 1, "hooks": {"stop": [{"command": "python3 .cursor/hooks/gate.py"}]}})
@@ -196,6 +217,67 @@ class CursorTest(Base):
         self.assertEqual(self.adapter('{"status": "completed", "loop_count": 1}'), (0, {}))
         self.assertEqual(self.adapter('{"status": "aborted", "loop_count": 0}'), (0, {}))
         self.assertEqual(self.adapter("not json")[0], 0)
+
+
+class EnvironmentTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.venv = self.project / "mcp-servers/tracker/.venv"
+        self.pip = [str(self.venv / install_lib.PYTHON), "-m", "pip", "install", "-r",
+                    str(self.project / "mcp-servers/tracker/requirements.txt")]
+
+    def test_server_with_requirements_gets_an_environment_with_them(self):
+        code, out, _ = self.install("claude", "mcp-server/tracker")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.run_command.commands, [[sys.executable, "-m", "venv", str(self.venv)], self.pip])
+        self.assertIn("created mcp-servers/tracker/.venv", out)
+        self.assertNotIn("Still to do", out)
+        self.assertEqual((self.venv / ".gitignore").read_text(), "*\n")
+
+    def test_second_install_keeps_the_environment_and_changed_requirements_update_it(self):
+        self.install("claude", "mcp-server/tracker")
+        self.run_command.commands.clear()
+        self.assertIn("unchanged mcp-servers/tracker/.venv", self.install("claude", "mcp-server/tracker")[1])
+        self.assertEqual(self.run_command.commands, [])
+        (self.source / "mcp-servers/tracker/requirements.txt").write_text("mcp>=3")
+        self.assertIn("updated mcp-servers/tracker/.venv", self.install("claude", "mcp-server/tracker")[1])
+        self.assertEqual(self.run_command.commands, [self.pip])
+
+    def test_failed_pip_installs_the_rest_exits_with_1_and_the_next_install_tries_again(self):
+        self.run_command.failing = "pip"
+        code, out, err = self.install("claude", "skill/plan")
+        self.assertEqual(code, 1)
+        self.assertIn("pip install -r", err)
+        self.assertIn("no network", err)
+        self.assertIn("created .claude/skills/plan/SKILL.md", out)
+        self.assertIn(".mcp.json", self.files())
+        self.run_command.failing = None
+        self.run_command.commands.clear()
+        self.assertEqual(self.install("claude", "skill/plan")[0], 0)
+        self.assertEqual(self.run_command.commands, [self.pip])
+
+    def test_server_without_requirements_runs_with_python3_and_gets_no_environment(self):
+        (self.source / "mcp-servers/tracker/requirements.txt").unlink()
+        self.assertEqual(self.install("claude", "mcp-server/tracker")[0], 0)
+        self.assertEqual(self.run_command.commands, [])
+        self.assertEqual(self.json(".mcp.json")["mcpServers"]["tracker"]["command"], "python3")
+
+    def test_environment_of_the_repository_is_not_copied(self):
+        (self.source / "mcp-servers/tracker/.venv").mkdir()
+        (self.source / "mcp-servers/tracker/.venv/pyvenv.cfg").write_text("home = /usr/bin")
+        self.install("claude", "mcp-server/tracker")
+        self.assertFalse((self.venv / "pyvenv.cfg").exists())
+
+    def test_real_environment_is_created_and_its_python_is_the_registered_command(self):
+        (self.source / "mcp-servers/tracker/requirements.txt").write_text("# nothing to install\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = install_lib.main("claude", ["mcp-server/tracker", "--project", str(self.project)], source=self.source)
+        self.assertEqual(code, 0)
+        python = self.json(".mcp.json")["mcpServers"]["tracker"]["command"]
+        done = subprocess.run([python, "-c", "import sys; print(sys.prefix)"], cwd=self.project,
+                              capture_output=True, text=True)
+        self.assertEqual(Path(done.stdout.strip()).resolve(), self.venv.resolve())
 
 
 class EntryScriptTest(Base):
