@@ -21,7 +21,10 @@ def main(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr):
         data = json.load(stdin)
     except ValueError:
         data = {}
-    failed = [] if data.get("stop_hook_active") else failures(COMMAND)
+    # An agent works in the background: the main agent only waits for it, and this hook runs again later.
+    tasks = data.get("background_tasks")
+    waits = isinstance(tasks, list) and any(isinstance(t, dict) and t.get("type") == "subagent" for t in tasks)
+    failed = [] if data.get("stop_hook_active") or waits else failures(COMMAND)
     if failed:
         print("The tdd-loop workflow is not finished:\n" + "\n".join(failed), file=stderr)
         return 2

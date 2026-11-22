@@ -4,6 +4,11 @@ from unittest.mock import patch
 
 import tdd_gate
 
+UNFINISHED = ["FAIL: login: task T1 is 'real-testing', not 'done'"]
+# What Claude Code gives a Stop hook in `background_tasks`: the work in flight that wakes the session at its end.
+AGENT = '{"id": "a7b7bd377cc9a114b", "type": "subagent", "status": "running", "agent_type": "tdd-real-tester"}'
+SHELL = '{"id": "bmn5s7qrh", "type": "shell", "status": "running", "command": "npm run dev"}'
+
 
 def run(stdin, failed):
     out, err = io.StringIO(), io.StringIO()
@@ -28,6 +33,18 @@ class HookTest(unittest.TestCase):
 
     def test_allows_when_already_blocked_once(self):
         self.assertEqual(run('{"stop_hook_active": true}', ["FAIL: login: task T2 is 'dev', not 'done'"])[0], 0)
+
+    def test_allows_without_the_check_while_an_agent_works_in_the_background(self):
+        stdin = io.StringIO('{"stop_hook_active": false, "background_tasks": [%s, %s]}' % (SHELL, AGENT))
+        out = io.StringIO()
+        with patch.object(tdd_gate, "failures", side_effect=AssertionError("the check ran")):
+            self.assertEqual(tdd_gate.main(stdin, out, io.StringIO()), 0)
+        self.assertEqual(out.getvalue().strip(), "{}")
+
+    def test_blocks_when_no_agent_works_in_the_background(self):
+        for tasks in ("[]", "[%s]" % SHELL, '"subagent"', "7"):
+            with self.subTest(background_tasks=tasks):
+                self.assertEqual(run('{"background_tasks": %s}' % tasks, UNFINISHED)[0], 2)
 
     def test_allows_on_invalid_input(self):
         self.assertEqual(run("not json", [])[0], 0)
