@@ -1,17 +1,17 @@
 ---
 name: github-ci
-description: Creates or adapts the GitHub Actions workflow that builds and tests a project on each push and pull request. It detects the build system (CMake, Python, Node.js, Rust, Go, Make, ...) from the project files and runs the commands of the project. Use when the user asks to add, create, set up or change a GitHub CI, a GitHub Actions workflow or a CI pipeline on GitHub.
+description: Creates or adapts the GitHub Actions workflow that builds and tests a project on Linux, macOS and Windows, on each push and pull request. It detects the build system (CMake, Python, Node.js, Rust, Go, Make, ...) from the project files and runs the commands of the project. Use when the user asks to add, create, set up or change a GitHub CI, a GitHub Actions workflow or a CI pipeline on GitHub, or to run it on other operating systems.
 ---
 
 # GitHub CI
 
-Writes the workflow that builds and tests the project on GitHub Actions. It changes the workflow file and nothing else.
+Writes the workflow that builds and tests the project on GitHub Actions, on Linux, macOS and Windows. It changes the workflow file and nothing else.
 
 ## Rules (no exceptions, even if the human partner asks)
 1. **The commands of the project only.** Every `run:` command comes from the project (Step 1). Never invent a check. If the project has nothing to build and no test: create no file, and ask which commands the CI must run.
 2. **A failure stays red.** Never hide a failure: no `continue-on-error`, no `|| true`, no `set +e`, no test skipped, deselected, deleted or changed. If a command fails, write the workflow with the real command. In the report, name what fails and say that the CI fails until it is fixed.
 3. **The workflow file only.** Change no source file, no test and no config file of the project. Leave no build output in the project.
-4. **One CI workflow.** If a file of `.github/workflows/` already builds, tests or lints the project, change this file: only add lines, keep every existing line as it is. Otherwise create `.github/workflows/ci.yml`.
+4. **One CI workflow.** If a file of `.github/workflows/` already builds, tests or lints the project, change this file: only add lines, keep every existing line as it is (one exception, in Step 2). Otherwise create `.github/workflows/ci.yml`.
 
 ## Step 1 — Find the commands
 Look for the build and test commands in this order. The first source that gives them wins:
@@ -45,9 +45,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   <build system>:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v<N>
@@ -57,9 +65,12 @@ jobs:
 
 - `<default branch>`: read it, do not guess it. `git symbolic-ref --short refs/remotes/origin/HEAD`, and if there is no remote, `git branch --show-current`. Only if the project is not a git repository: `main`.
 - One step for each command.
-- No `strategy` and no matrix, unless the project names several versions or operating systems to support.
+- Operating systems: the three of the frame. If the human partner or the project names the operating systems to support, `os` holds these only. No other matrix entry, unless the project names several versions to support.
+- Shell: with `bash`, a command of the project runs as it is written on every operating system (the default shell of Windows is PowerShell). Never rewrite a command for another shell.
+- CMake: on Windows the build type is chosen at build time, and `ctest` runs no test without it. Add `--config <type>` to the `cmake --build` command and `-C <type>` to the `ctest` command. `<type>` is the build type that the project documents, otherwise `Debug`: a `Release` build type switches off `assert`.
 - An action is named with a major version tag (`@v<N>`), never with a branch.
 - A job added to an existing workflow follows the existing jobs (runner, action versions, language version) and has `timeout-minutes`.
+- An existing workflow goes to other operating systems only when the human partner asks. Then add `strategy` and `defaults` as in the frame, change `runs-on` to `${{ matrix.os }}`, and give the CMake commands their build type. No other existing line changes.
 
 ## Step 3 — Check
 1. Run each `run:` command, in the order of the workflow, on a copy of the project in a temporary folder outside the project. Delete the copy afterwards. If a tool is not installed, the command is `not run`.
@@ -69,4 +80,5 @@ jobs:
 ## Step 4 — Report
 - The workflow file, and the build system found.
 - Each command with its local result: `passed`, `failed` or `not run`.
+- The operating system where the commands were run locally. Each other operating system of the workflow, by name: `not run`.
 - What fails (Rule 2), and that the workflow did not run on GitHub yet.
