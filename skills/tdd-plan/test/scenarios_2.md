@@ -30,7 +30,7 @@ Add a class `Cart` to `cart.py`. It holds items with a price and computes the to
 ````
 
 ## Pass criteria
-- [ ] `python3 mcp-servers/tdd-progress/progress.py status cart` exits with code 0, and its output shows `"status": "open"`, at least 2 tasks under `new`, and 0 task under `dev`, `review` and `done`.
+- [ ] `python3 mcp-servers/tdd-progress/progress.py status cart --json` exits with code 0, and its output shows `"status": "open"`, at least 2 tasks under `new`, and 0 task under `dev`, `review` and `done`.
 - [ ] `specs/cart/progress.json` is byte-identical to its own content written again with `json.dumps(data, indent=2) + "\n"`, and every task in it has exactly the keys `id`, `title`, `file`, `depends_on`, `status`, `rejections` and `note` (this is the layout the tool writes).
 - [ ] In `specs/cart/progress.json`, `test_command` is exactly `python3 -m unittest discover -s tests`.
 - [ ] For every task of `progress.json`, the file `specs/cart/<file>` exists and contains the headings `## Goal`, `## Behaviors`, `## Tests to write` and `## Depends on`, in this order.
