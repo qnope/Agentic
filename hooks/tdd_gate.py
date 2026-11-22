@@ -5,6 +5,8 @@ import subprocess
 import sys
 
 COMMAND = ["python3", "mcp-servers/tdd-progress/progress.py", "verify"]
+RESUME = ("Continue the skill tdd-implement where it stopped: call progress_next, then go on from the status of "
+          "each task. If an agent that you started still works on a task, wait for its output: do not start it again.")
 
 
 def failures(command):
@@ -21,9 +23,12 @@ def main(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr):
         data = json.load(stdin)
     except ValueError:
         data = {}
-    failed = [] if data.get("stop_hook_active") else failures(COMMAND)
+    # An agent works in the background: the main agent only waits for it, and this hook runs again later.
+    tasks = data.get("background_tasks")
+    waits = isinstance(tasks, list) and any(isinstance(t, dict) and t.get("type") == "subagent" for t in tasks)
+    failed = [] if data.get("stop_hook_active") or waits else failures(COMMAND)
     if failed:
-        print("The tdd-loop workflow is not finished:\n" + "\n".join(failed), file=stderr)
+        print("The tdd-loop workflow is not finished:\n" + "\n".join(failed) + "\n" + RESUME, file=stderr)
         return 2
     print("{}", file=stdout)
     return 0

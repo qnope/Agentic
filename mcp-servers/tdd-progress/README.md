@@ -108,7 +108,7 @@ The project root is the folder the server starts in. Set `TDD_PROGRESS_ROOT` to 
 
 ## Command line
 
-Same operations, same rules, no dependency. The stop hook `hooks/tdd_gate.py` runs `verify`: register it in your tool as a hook that runs when the agent stops.
+Same operations, same rules, no dependency. The stop hook `hooks/tdd_gate.py` runs `verify`: register it in your tool as a hook that runs when the agent stops. The file `README.md` at the root of this repository says when this hook blocks the stop.
 
 ```
 python3 mcp-servers/tdd-progress/progress.py create <feature> --test-command "<command>" --tasks tasks.json
