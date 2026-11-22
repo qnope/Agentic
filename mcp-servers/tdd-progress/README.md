@@ -58,13 +58,37 @@ These rules apply when the project root is the top folder of a git repository an
 - **One commit for the end.** When a feature becomes `closed`, the tool commits `progress.json` alone, with the message `<feature>: closed`.
 - **One pull request per feature.** `pr` closes the feature as `verify` does, pushes its branch to `origin`, then opens the pull request with the GitHub command line: `gh pr create`. The title is the feature name. The body lists the tasks and the test command. It is refused when a task is not `done`, the test command fails, the branch is the default branch of `origin`, the push fails or `gh` fails. When only `gh` fails, the branch is pushed: open the pull request by hand.
 
+## Parallel tasks
+
+Tasks that can run at the same time are each developed in their own git worktree, then merged in the project root. The rules of `## Git` still apply: the worktrees start from the branch of the feature, and each task is one commit on it.
+
+- `new -> dev` gives the task a worktree when another task is ready or in progress. The worktree is the folder `.worktrees/<feature>/<task id>`, on the branch `tdd/<feature>/<task id>`, created from the last commit of the project root. The field `worktree` of the task keeps its path. A task that has no other task to run with is developed in the project root.
+- A worktree needs three things: the project root is the top folder of a git repository and is on a branch, the repository has a commit, and no change is uncommitted outside `specs/`. When one is missing, the task is developed in the project root, and the result of the move has `no_worktree`: the reason. Exception: while another task has a worktree, the move is refused with the reason and the task stays `new`, because it cannot share the project root with the tasks that run in their worktree.
+- `real-testing -> done` for a task with a worktree does these steps in order. When a step fails, the move is refused and the task stays in `real-testing` with its worktree. A merge conflict in step 2 is the exception:
+  1. It moves the folder `specs/<feature>/real-testing/<task id>/` of the worktree, if the real tester wrote it there, to the project root. Then it commits what is not committed in the worktree, except `specs/`.
+  2. It merges the last commit of the project root into the worktree. On a conflict, it cancels the merge and sends the task back to `dev` itself, as a rejection: the result of the move has the status `dev`, `note` names the files in conflict and the `git merge` command to run in the worktree, and `rejections` gets 1 more. The developer resolves the conflict in the worktree, then the task is reviewed and really tested again.
+  3. It runs `test_command` in the worktree.
+  4. It adds one commit `<feature> <task id>: <title>` to the branch of the project root. This commit holds the content of the worktree. Before this step, the project root does not change.
+  5. It runs `test_command` in the project root, as for every task.
+  6. It puts the other changes of the project root (`progress.json`, what the real tester kept) in the commit of step 4: the task is one commit. The result has `commit`: its short hash.
+
+  Then it removes the worktree, its branch and the field `worktree`.
+- `.worktrees/` is added to `.git/info/exclude`: git does not show it in the project root.
+- Two `update` calls on one feature at the same time run one after the other. Not on Windows: there, call `update` one at a time.
+- The tool refuses to run from inside a worktree: it runs from the project root.
+
+Limits:
+
+- A worktree holds only the files that git tracks. A build folder or installed dependencies are not in it: set them up in the worktree if the test command needs them.
+- A test runner that also searches the hidden folders finds the tests of `.worktrees/`: exclude this folder in its configuration.
+
 ## MCP tools
 
 | Tool | Does |
 |---|---|
 | `progress_create(feature, test_command, tasks)` | Creates `progress.json`, every task `new`. |
 | `progress_next(feature)` | Lists the `ready` tasks (new, all dependencies done), the tasks in `dev`, `review` and `real-testing`, the `escalated` and `waiting` ones, `finished` and the `test_command`. |
-| `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the output of the reviewer or of the real tester: required for `real-testing`, for `done` and for a rejection. |
+| `progress_update(feature, task_id, status, note)` | Moves one task to its next status. `note` is the output of the reviewer or of the real tester: required for `real-testing`, for `done` and for a rejection. Creates and merges the worktree of a parallel task. |
 | `progress_pull_request(feature)` | Closes a finished feature, pushes its branch and opens its pull request. The result has `branch` and `url`. |
 | `progress_status(feature)` | Gives the summary and the dashboard (see below) of one feature. With no name: of every feature. |
 

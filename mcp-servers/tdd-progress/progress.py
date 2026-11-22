@@ -4,20 +4,29 @@
 One feature = one folder `specs/<feature>/` holding `spec.md`, `tasks/` and `progress.json`.
 A task goes new -> dev -> review -> real-testing -> done. A review or a real test can send it back to dev.
 In a git repository, a feature gets its own branch, each done task is one commit, and `pr` opens the pull request.
+Tasks that can run at the same time each get a git worktree `.worktrees/<feature>/<task>`, merged at done.
 """
 import argparse
+import functools
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # Windows: updates made at the same time are not protected.
+    fcntl = None
 
 NEXT = {"new": ("dev",), "dev": ("review",), "review": ("real-testing", "dev"),
         "real-testing": ("done", "dev"), "done": ()}
 # A forward move out of a checking status needs the output of its agent: (first line, field that keeps it).
 PROOF = {"real-testing": ("APPROVED", "review"), "done": ("PASSED", "real_testing")}
 MAX_REJECTIONS = 3
+WORKTREES = ".worktrees"
 NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
 
@@ -32,6 +41,8 @@ def run_tests(command, cwd):
 
 
 def _file(root, feature):
+    if WORKTREES in Path(root).resolve().parts:
+        raise ProgressError("this folder is the worktree of a task: run the tool from the project root")
     if not isinstance(feature, str) or not NAME.fullmatch(feature):
         raise ProgressError(f"feature name {feature!r} is not kebab-case (example: user-login)")
     return Path(root) / "specs" / feature / "progress.json"
@@ -111,27 +122,142 @@ def _start_branch(root, feature):
             raise ProgressError(f"cannot create the branch 'feature/{feature}': {output}")
 
 
-def _commit(root, message, path):
-    """Commit the changes under `path`. Return the short hash, or "" with no git repository or no change."""
-    if not _branch(root) or not _git(root, "status", "--porcelain", "--", path)[1]:
+def _commit(root, message, path, amend=False):
+    """Commit the changes under `path`. Return the short hash, or "" with no git repository or no change.
+
+    `amend` puts the changes in the last commit, and returns its hash even with no change.
+    """
+    if not _branch(root):
         return ""
-    _git(root, "add", "--all", "--", path)
-    code, output = _git(root, "commit", "--quiet", "--message", message, "--", path)
-    if code != 0:
-        raise ProgressError(f"the commit failed: {output}")
+    if _git(root, "status", "--porcelain", "--", path)[1]:
+        _git(root, "add", "--all", "--", path)
+        code, output = _git(root, "commit", "--quiet", *["--amend"] * amend, "--message", message, "--", path)
+        if code != 0:
+            raise ProgressError(f"the commit failed: {output}")
+    elif not amend:
+        return ""
     return _git(root, "rev-parse", "--short", "HEAD")[1]
 
 
-def _record(root, data, message, path="."):
+def _record(root, data, message, path=".", amend=False):
     """Save the progress file, then commit the changes under `path`. A failed commit restores the file."""
     file = _file(root, data["feature"])
     before = file.read_text()
     _save(root, data)
     try:
-        return _commit(root, message, path)
+        return _commit(root, message, path, amend)
     except ProgressError:
         file.write_text(before)
         raise
+
+
+def _exclusive(operation):
+    """Callers that change one feature at the same time go one after the other: its folder is the lock."""
+    @functools.wraps(operation)
+    def locked(root, feature, *arguments, **options):
+        folder = _file(root, feature).parent
+        if not fcntl or not folder.is_dir():
+            return operation(root, feature, *arguments, **options)
+        handle = os.open(folder, os.O_RDONLY)
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            return operation(root, feature, *arguments, **options)
+        finally:
+            os.close(handle)
+    return locked
+
+
+def _must(folder, *arguments):
+    """Run one git command that has to work. Return its output."""
+    code, output = _git(folder, *arguments)
+    if code != 0:
+        raise ProgressError(f"`git {' '.join(arguments)}` failed in {folder}: {output}")
+    return output
+
+
+def _has_company(data, task):
+    """True when another task is in progress or can start: the task can run at the same time as it."""
+    return any(other is not task and (other["status"] in ("dev", "review", "real-testing")
+                                      or other["status"] == "new" and not _unfinished_dependencies(data, other))
+               for other in data["tasks"])
+
+
+def _subject(feature, task):
+    """The message of the one commit of a task."""
+    return f"{feature} {task['id']}: {task['title']}"
+
+
+def _task_branch(feature, task):
+    return f"tdd/{feature}/{task['id']}"
+
+
+def _add_worktree(root, feature, task):
+    """Give the task its own checkout of the last commit, on its own branch. Return '' or why it has none."""
+    if not _branch(root):
+        return "the project root is not the top folder of a git repository, on a branch"
+    if _git(root, "rev-parse", "--verify", "--quiet", "HEAD")[0] != 0:
+        return "the git repository has no commit"
+    changes = _must(root, "status", "--porcelain", "--", ".", ":(exclude)specs").splitlines()
+    if changes:
+        names = ", ".join(line.split(maxsplit=1)[-1] for line in changes[:5]) + ", ..." * (len(changes) > 5)
+        return f"uncommitted changes outside specs/: {names} (a worktree starts from the last commit)"
+    exclude = Path(root) / _must(root, "rev-parse", "--git-path", "info/exclude")
+    if f"/{WORKTREES}/" not in (exclude.read_text() if exclude.exists() else "").split():
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        with exclude.open("a") as file:
+            file.write(f"/{WORKTREES}/\n")
+    path = f"{WORKTREES}/{feature}/{task['id']}"
+    code, output = _git(root, "worktree", "add", "--quiet", "-b", _task_branch(feature, task), path, "HEAD")
+    if code != 0:
+        return f"git worktree add failed: {output}"
+    task["worktree"] = path
+    return ""
+
+
+def _merge_worktree(root, data, task):
+    """Bring the work of the task from its worktree to the root, as one commit. The root changes only at the end.
+
+    Return '' when the root holds the work, or the merge conflict that the developer has to resolve.
+    """
+    tree, stays = Path(root) / task["worktree"], f"task '{task['id']}' stays in {task['status']}: "
+    message = _subject(data["feature"], task)
+    evidence = Path("specs", data["feature"], "real-testing", task["id"])
+    if (tree / evidence).is_dir():  # What the real tester kept moves to the root: the worktree commits no specs/.
+        shutil.copytree(tree / evidence, Path(root) / evidence, dirs_exist_ok=True)
+        shutil.rmtree(tree / evidence)
+    _must(tree, "add", "--all", "--", ".", ":(exclude)specs")
+    merging = _git(tree, "rev-parse", "--verify", "--quiet", "MERGE_HEAD")[0] == 0
+    if merging or _git(tree, "diff", "--cached", "--quiet")[0] != 0:
+        _must(tree, "commit", "--quiet", "--no-verify", "-m", message)
+    head = _must(root, "rev-parse", "HEAD")
+    code, output = _git(tree, "merge", "--quiet", "--no-edit", "--no-verify", head)
+    if code != 0:
+        files = ", ".join(_git(tree, "diff", "--name-only", "--diff-filter=U")[1].splitlines())
+        _git(tree, "merge", "--abort")
+        if not files:
+            raise ProgressError(f"{stays}in the worktree {task['worktree']}, `git merge {head}` failed: {output}")
+        return (f"{files}: merge conflict with the last commit of the project root -> in the worktree "
+                f"{task['worktree']}, run `git merge {head}`, keep the work of both sides and make the tests pass")
+    content = _must(tree, "rev-parse", "HEAD^{tree}")
+    if content == _must(root, "rev-parse", "HEAD^{tree}"):
+        if _must(root, "log", "-1", "--format=%s") == message:
+            return ""  # An earlier call merged it, then the tests failed in the root.
+        raise ProgressError(f"{stays}its worktree {task['worktree']} holds no change: develop the task in it")
+    code, output = run_tests(data["test_command"], tree)
+    if code != 0:
+        raise ProgressError(f"{stays}the test command failed in the worktree {task['worktree']} "
+                            f"(exit {code}): {data['test_command']}\n{output[-2000:]}")
+    _must(root, "merge", "--quiet", "--ff-only", _must(root, "commit-tree", "-p", head, "-m", message, content))
+    return ""
+
+
+def _remove_worktree(root, feature, task, path):
+    """Drop the worktree and the branch of a merged task, and the folders they leave empty."""
+    _git(root, "worktree", "remove", "--force", path)
+    _git(root, "branch", "-D", _task_branch(feature, task))
+    for folder in (Path(root) / path).parents[:2]:
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
 
 
 def create(root, feature, test_command, tasks):
@@ -193,10 +319,11 @@ def next_tasks(root, feature):
     return result
 
 
+@_exclusive
 def update(root, feature, task_id, status, note=""):
     """Move one task to its next status. Refuse any move the rules do not allow."""
     data = _load(root, feature)
-    task = _task(data, task_id)
+    task, no_worktree = _task(data, task_id), ""
     if status not in NEXT:
         raise ProgressError(f"unknown status '{status}': use one of {', '.join(NEXT)}")
     if data["status"] == "closed":
@@ -209,12 +336,21 @@ def update(root, feature, task_id, status, note=""):
         if blockers:
             raise ProgressError(f"task '{task_id}' depends on tasks that are not done: {', '.join(blockers)}")
         _start_branch(root, feature)
+        no_worktree = _add_worktree(root, feature, task) if _has_company(data, task) else ""
+        if no_worktree and any("worktree" in other for other in data["tasks"]):
+            raise ProgressError(f"task '{task_id}' stays new: it gets no worktree ({no_worktree}), and it cannot "
+                                "share the project root with the tasks that run in their worktree")
     elif status in PROOF:
         word, field = PROOF[status]
         if not note.strip().startswith(word):
             raise ProgressError(f"task '{task_id}' stays in {task['status']}: '{status}' needs the output of "
                                 f"the {task['status']} agent as note, and its first line is {word}")
         if status == "done":
+            conflict = _merge_worktree(root, data, task) if "worktree" in task else ""
+            if conflict:  # The merge rejects the task, as a review does: what the developer changes is checked again.
+                task["status"], task["note"], task["rejections"] = "dev", conflict, task["rejections"] + 1
+                _save(root, data)
+                return {**_view(feature, task), "escalate": _escalated(task)}
             code, output = run_tests(data["test_command"], Path(root))
             if code != 0:
                 raise ProgressError(f"task '{task_id}' stays in {task['status']}: the test command failed "
@@ -226,12 +362,15 @@ def update(root, feature, task_id, status, note=""):
         task["rejections"] += 1
         task["note"] = note.strip()
     task["status"] = status
+    merged = task.pop("worktree", None) if status == "done" else None
     result = {**_view(feature, task), "escalate": _escalated(task)}
-    if status == "done":
-        result["commit"] = _record(root, data, f"{feature} {task_id}: {task['title']}")
+    if status == "done":  # The merge of a worktree made the commit of the task: the rest goes in it.
+        result["commit"] = _record(root, data, _subject(feature, task), amend=bool(merged))
     else:
         _save(root, data)
-    return result
+    if merged:
+        _remove_worktree(root, feature, task, merged)
+    return {**result, "no_worktree": no_worktree} if no_worktree else result
 
 
 def status(root, feature=None):

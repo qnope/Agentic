@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -92,6 +93,18 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(len(names), 5)
         self.assertFalse(results[0].is_error)
         self.assertTrue((self.root / "specs" / "login" / "progress.json").exists())
+
+    def test_the_server_process_leaves_no_bytecode_in_the_project(self):
+        folder = self.root / "mcp-servers" / "tdd-progress"
+        folder.mkdir(parents=True)
+        for name in ("server.py", "progress.py"):
+            shutil.copy(Path(server.__file__).with_name(name), folder)
+        process = StdioServerParameters(command=sys.executable, args=[str(folder / "server.py")], cwd=str(self.root),
+                                        env={k: v for k, v in os.environ.items() if not k.startswith("PYTHON")})
+        _, results = asyncio.run(session(process, [("progress_create", CREATE)]))
+        self.assertFalse(results[0].is_error)
+        self.assertEqual(sorted(path.name for path in folder.iterdir()), ["progress.py", "server.py"])
+
 
 
 if __name__ == "__main__":
