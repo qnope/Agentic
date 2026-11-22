@@ -7,6 +7,7 @@ A part brings the parts of this repository that its text names by path: `skills/
 `agents/<name>.md`, `hooks/<name>.py`, `mcp-servers/<name>/`. A workflow installs all its components.
 An MCP server that has a `requirements.txt` gets its own Python environment, `mcp-servers/<name>/.venv`,
 with these requirements installed in it. The tool starts the server with the Python of this environment.
+Git ignores what the install wrote: the install adds these paths to a block of the `.gitignore` of the project.
 """
 import argparse
 import json
@@ -14,6 +15,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Where a part is in this repository. `{}` is its name.
@@ -28,6 +30,11 @@ FOLDERS = ("skill", "mcp-server")  # These parts are a whole folder. The others 
 # How a text names another part.
 NAMED = {"skill": r"skills/([\w-]+)/SKILL\.md", "agent": r"agents/([\w-]+)\.md",
          "hook": r"hooks/([\w-]+)\.py", "mcp-server": r"mcp-servers/([\w-]+)/"}
+
+# The block of the install in the `.gitignore` of the project: one installed path on each line between these two.
+IGNORE_START = "# >>> Agentic: paths written by install_claude.py and install_cursor.py >>>"
+IGNORE_END = "# <<< Agentic <<<"
+IGNORE_BLOCK = re.compile(r"^# >>> Agentic\b[^\n]*\n(.*?)^# <<< Agentic <<<[^\n]*\n?", re.M | re.S)
 
 # The Python of an environment, from the folder of the environment.
 PYTHON = Path("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -137,12 +144,18 @@ def child(parent, key, empty, path):
 
 
 def plan(tool, source, project, parts):
-    """Return (files, configs, servers): what to write in the project, and the servers that need an environment.
+    """Return (files, configs, servers, ignored): what to write in the project, the servers that need an
+    environment, and the installed paths that git must ignore.
 
     Writes nothing.
     """
     home = f".{tool}"
-    files, configs, servers = {}, {}, []
+    files, configs, servers, ignored = {}, {}, [], []
+
+    def copy(installed, path):
+        """Git must ignore the copy of a part. When the project is this repository, the part itself is no copy."""
+        if (project / installed).resolve() != path.resolve():
+            ignored.append(f"/{installed}")
 
     def config(path):
         if path not in configs:
@@ -169,11 +182,14 @@ def plan(tool, source, project, parts):
     for kind, name in parts:
         path = find(source, kind, name)
         if kind == "skill":
+            copy(f"{home}/skills/{name}/", path)
             for inside in kept(path):
                 files[f"{home}/skills/{name}/{inside.as_posix()}"] = text(path / inside)
         elif kind == "agent":
+            copy(f"{home}/agents/{name}.md", path)
             files[f"{home}/agents/{name}.md"] = text(path)
         elif kind == "hook":
+            copy(f"hooks/{name}.py", path)
             files[f"hooks/{name}.py"] = path.read_bytes()
             if tool == "claude":
                 command = f'cd "$CLAUDE_PROJECT_DIR" && python3 hooks/{name}.py'
@@ -182,6 +198,7 @@ def plan(tool, source, project, parts):
                 if not any(hook.get("command") == command for group in groups for hook in group.get("hooks", [])):
                     groups.append({"hooks": [{"type": "command", "command": command}]})
             else:
+                ignored.append(f"/.cursor/hooks/{name}.py")
                 files[f".cursor/hooks/{name}.py"] = CURSOR_ADAPTER.format(name=name).encode()
                 command = f"python3 .cursor/hooks/{name}.py"
                 hooks = config(".cursor/hooks.json")
@@ -190,6 +207,7 @@ def plan(tool, source, project, parts):
                 if not any(entry.get("command") == command for entry in entries):
                     entries.append({"command": command})
         elif kind == "mcp-server":
+            copy(f"mcp-servers/{name}/", path)
             for inside in kept(path):
                 files[f"mcp-servers/{name}/{inside.as_posix()}"] = (path / inside).read_bytes()
             python = "python3"
@@ -204,7 +222,7 @@ def plan(tool, source, project, parts):
                          "env": {name.upper().replace("-", "_") + "_ROOT": "${workspaceFolder}"}}
             path_of_config = ".mcp.json" if tool == "claude" else ".cursor/mcp.json"
             child(config(path_of_config), "mcpServers", {}, path_of_config)[name] = entry
-    return files, configs, servers
+    return files, configs, servers, ignored
 
 
 def write(project, path, content, same):
@@ -216,6 +234,27 @@ def write(project, path, content, same):
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return state
+
+
+def ignore(project, paths):
+    """Make git ignore paths of the project: add them to the block of the install in its `.gitignore`.
+
+    Return (created, updated or unchanged, the lines of the block). The block keeps the lines it has. A new block
+    goes at the end of the file. The text around the block does not change. Without a line, no file is written.
+    """
+    file = project / ".gitignore"
+    text = file.read_bytes().decode(errors="surrogateescape") if file.exists() else ""
+    found = IGNORE_BLOCK.search(text)
+    lines = sorted(set(paths) | {line for line in (found.group(1).splitlines() if found else []) if line.strip()})
+    if not lines:
+        return "unchanged", lines
+    block = "\n".join([IGNORE_START, *lines, IGNORE_END]) + "\n"
+    if found:
+        text = text[:found.start()] + block + text[found.end():]
+    else:  # One empty line separates the block from the text above it.
+        text += ("" if not text or text.endswith("\n\n") else "\n" if text.endswith("\n") else "\n\n") + block
+    content = text.encode(errors="surrogateescape")
+    return write(project, ".gitignore", content, content.__eq__), lines
 
 
 def environment(folder, run):
@@ -246,12 +285,22 @@ def install(tool, source, project, wanted, run=subprocess.run):
     if not project.is_dir():
         raise InstallError(f"the project folder does not exist: {project}")
     parts = with_named_parts(source, [parse(source, text) for text in wanted])
-    files, configs, servers = plan(tool, source, project, [part for part in parts if part[0] != "workflow"])
+    parts = [part for part in parts if part[0] != "workflow"]
+    files, configs, servers, ignored = plan(tool, source, project, parts)
+    with tempfile.TemporaryDirectory() as empty:  # What the install writes in the config files of an empty project.
+        alone = plan(tool, source, Path(empty), parts)[1]
     for path, content in files.items():
         yield f"{write(project, path, content, content.__eq__)} {path}"
     for path, value in configs.items():
         content = (json.dumps(value, indent=2) + "\n").encode()
         yield f"{write(project, path, content, lambda old, value=value: json.loads(old) == value)} {path}"
+    # A config file with nothing but what the install writes is ignored too: this hides nothing of the user.
+    state, lines = ignore(project, ignored + [f"/{path}" for path in configs if configs[path] == alone[path]])
+    if lines:
+        yield f"{state} .gitignore"
+    for path in configs:
+        if f"/{path}" not in lines:
+            yield f"not ignored {path}: it holds settings that the install did not write"
     for name in servers:
         yield f"{environment(project / 'mcp-servers' / name, run)} mcp-servers/{name}/.venv"
 
