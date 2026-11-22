@@ -4,7 +4,7 @@ Skills, agents, hooks, MCP servers and workflows to work with LLM coding tools.
 
 | Folder | Content |
 |---|---|
-| `skills/<name>/` | A skill: `SKILL.md` and its scenario tests in `test/`. |
+| `skills/<name>/` | A skill: `SKILL.md`, its reference files and its scenario tests in `test/`. |
 | `agents/<name>.md` | An agent (subagent). |
 | `hooks/<name>.py` | A stop hook and its unit tests `test_<name>.py`. |
 | `mcp-servers/<name>/` | An MCP server and its unit tests. |
@@ -45,6 +45,7 @@ A part is `<kind>/<name>`. This is where each kind goes in the project:
 Rules:
 
 - A part brings the parts that its text names by path. Example: `skill/tdd-implement` brings the three agents it starts and the MCP server `tdd-progress`.
+- A skill is copied with its reference files: every file of its folder that is not a test.
 - The tests of a part are not copied (`test/`, `test_*.py`).
 - In the copied skills and agents, the path of an installed skill or agent is rewritten to its place in the project: `agents/tdd-developer.md` becomes `.claude/agents/tdd-developer.md`.
 - In a config file that already exists, the script adds or updates the entry of the part and keeps every other setting. A hook is registered once.
