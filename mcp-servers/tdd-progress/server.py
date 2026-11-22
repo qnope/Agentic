@@ -13,7 +13,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
-sys.dont_write_bytecode = True  # No __pycache__ in the project: an uncommitted file there stops the worktrees.
+sys.dont_write_bytecode = True  # No __pycache__ in the project.
 import progress  # noqa: E402
 
 server = MCPServer("tdd-progress", log_level="WARNING", instructions=(
@@ -82,7 +82,9 @@ def progress_update(feature: str, task_id: str, status: Literal["dev", "review",
     real-testing -> done: note is required and holds the real tester output, whose first
     line is PASSED; the tool then runs the test command, refused while it fails; then it
     commits every change of the project with the message "<feature> <task id>: <title>",
-    refused while the commit fails. The result has commit: its short hash, or "" when the
+    refused while the commit fails. The commit never takes a build folder (build,
+    cmake-build-*, out, dist, target, node_modules, __pycache__, .venv, venv, or a folder
+    that holds CMakeCache.txt) nor what .gitignore names. The result has commit: its short hash, or "" when the
     project is not in git. For a task with a worktree, the tool first merges the worktree
     in the project root, in that same commit, then removes it: refused while the tests fail
     in the worktree. On a merge conflict the task is not done: the tool sends it back to dev

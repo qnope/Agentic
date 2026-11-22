@@ -5,8 +5,10 @@ One feature = one folder `specs/<feature>/` holding `spec.md`, `tasks/` and `pro
 A task goes new -> dev -> review -> real-testing -> done. A review or a real test can send it back to dev.
 In a git repository, a feature gets its own branch, each done task is one commit, and `pr` opens the pull request.
 Tasks that can run at the same time each get a git worktree `.worktrees/<feature>/<task>`, merged at done.
+No commit takes a build folder: git ignores them in this clone.
 """
 import argparse
+import fnmatch
 import functools
 import json
 import os
@@ -27,6 +29,10 @@ NEXT = {"new": ("dev",), "dev": ("review",), "review": ("real-testing", "dev"),
 PROOF = {"real-testing": ("APPROVED", "review"), "done": ("PASSED", "real_testing")}
 MAX_REJECTIONS = 3
 WORKTREES = ".worktrees"
+# What a build or an install makes is never committed: a folder with one of these names, at any depth,
+# and a folder that holds the marker file, whatever its name.
+BUILD_FOLDERS = ("build", "cmake-build-*", "out", "dist", "target", "node_modules", "__pycache__", ".venv", "venv")
+BUILD_MARKER = "CMakeCache.txt"
 NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 
 
@@ -105,6 +111,14 @@ def _git(root, *arguments):
     return _run(["git", *arguments], root)
 
 
+def _must(folder, *arguments):
+    """Run one git command that has to work. Return its output."""
+    code, output = _git(folder, *arguments)
+    if code != 0:
+        raise ProgressError(f"`git {' '.join(arguments)}` failed in {folder}: {output}")
+    return output
+
+
 def _branch(root):
     """Return the current branch, or "" when the project root is not the top folder of a git repository."""
     if _git(root, "rev-parse", "--is-inside-work-tree", "--show-cdup") != (0, "true"):
@@ -122,13 +136,44 @@ def _start_branch(root, feature):
             raise ProgressError(f"cannot create the branch 'feature/{feature}': {output}")
 
 
-def _commit(root, message, path, amend=False):
-    """Commit the changes under `path`. Return the short hash, or "" with no git repository or no change.
+def _ignore(folder, lines):
+    """Add the lines that are missing to `.git/info/exclude`: git ignores what they name, in this clone only."""
+    exclude = Path(folder) / _must(folder, "rev-parse", "--git-path", "info/exclude")
+    text = exclude.read_text() if exclude.exists() else ""
+    missing = [line for line in lines if line not in text.splitlines()]
+    if missing:
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        end = "\n" * (text != "" and not text.endswith("\n"))
+        exclude.write_text(text + end + "".join(f"{line}\n" for line in missing))
 
+
+def _ignore_build_folders(folder):
+    """Make git ignore the build folders under `folder`, so that no commit takes them. No project file changes.
+
+    A build folder has a name of BUILD_FOLDERS, or holds the file BUILD_MARKER. A folder that holds a tracked
+    file is not one: git keeps taking its new files.
+    """
+    if not _branch(folder):
+        return
+    literal = functools.partial(re.sub, r"([\\*?\[])", r"\\\1")  # A path as a line of the exclude file.
+    tracked = _must(folder, "ls-files", "-z").split("\0")
+    folders = {path[:end] for path in tracked for end, letter in enumerate(path) if letter == "/"}
+    named = sorted(f for f in folders if any(fnmatch.fnmatchcase(f.rpartition("/")[2], name) for name in BUILD_FOLDERS))
+    _ignore(folder, [f"{name}/" for name in BUILD_FOLDERS] + [f"!/{literal(f)}/" for f in named])
+    markers = _must(folder, "ls-files", "-z", "--others", "--exclude-standard", "--", f":(glob)**/{BUILD_MARKER}")
+    found = {marker.rpartition("/")[0] for marker in markers.split("\0")} - folders - {""}
+    _ignore(folder, [f"/{literal(f)}/" for f in sorted(found)])
+
+
+def _commit(root, message, path, amend=False):
+    """Commit the changes under `path`, except the build folders.
+
+    Return the short hash, or "" with no git repository or no change.
     `amend` puts the changes in the last commit, and returns its hash even with no change.
     """
     if not _branch(root):
         return ""
+    _ignore_build_folders(root)
     if _git(root, "status", "--porcelain", "--", path)[1]:
         _git(root, "add", "--all", "--", path)
         code, output = _git(root, "commit", "--quiet", *["--amend"] * amend, "--message", message, "--", path)
@@ -167,14 +212,6 @@ def _exclusive(operation):
     return locked
 
 
-def _must(folder, *arguments):
-    """Run one git command that has to work. Return its output."""
-    code, output = _git(folder, *arguments)
-    if code != 0:
-        raise ProgressError(f"`git {' '.join(arguments)}` failed in {folder}: {output}")
-    return output
-
-
 def _has_company(data, task):
     """True when another task is in progress or can start: the task can run at the same time as it."""
     return any(other is not task and (other["status"] in ("dev", "review", "real-testing")
@@ -201,11 +238,7 @@ def _add_worktree(root, feature, task):
     if changes:
         names = ", ".join(line.split(maxsplit=1)[-1] for line in changes[:5]) + ", ..." * (len(changes) > 5)
         return f"uncommitted changes outside specs/: {names} (a worktree starts from the last commit)"
-    exclude = Path(root) / _must(root, "rev-parse", "--git-path", "info/exclude")
-    if f"/{WORKTREES}/" not in (exclude.read_text() if exclude.exists() else "").split():
-        exclude.parent.mkdir(parents=True, exist_ok=True)
-        with exclude.open("a") as file:
-            file.write(f"/{WORKTREES}/\n")
+    _ignore(root, [f"/{WORKTREES}/"])
     path = f"{WORKTREES}/{feature}/{task['id']}"
     code, output = _git(root, "worktree", "add", "--quiet", "-b", _task_branch(feature, task), path, "HEAD")
     if code != 0:
@@ -225,6 +258,7 @@ def _merge_worktree(root, data, task):
     if (tree / evidence).is_dir():  # What the real tester kept moves to the root: the worktree commits no specs/.
         shutil.copytree(tree / evidence, Path(root) / evidence, dirs_exist_ok=True)
         shutil.rmtree(tree / evidence)
+    _ignore_build_folders(tree)
     _must(tree, "add", "--all", "--", ".", ":(exclude)specs")
     merging = _git(tree, "rev-parse", "--verify", "--quiet", "MERGE_HEAD")[0] == 0
     if merging or _git(tree, "diff", "--cached", "--quiet")[0] != 0:
@@ -336,6 +370,7 @@ def update(root, feature, task_id, status, note=""):
         if blockers:
             raise ProgressError(f"task '{task_id}' depends on tasks that are not done: {', '.join(blockers)}")
         _start_branch(root, feature)
+        _ignore_build_folders(root)
         no_worktree = _add_worktree(root, feature, task) if _has_company(data, task) else ""
         if no_worktree and any("worktree" in other for other in data["tasks"]):
             raise ProgressError(f"task '{task_id}' stays new: it gets no worktree ({no_worktree}), and it cannot "

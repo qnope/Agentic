@@ -329,6 +329,64 @@ class CommitTest(GitBase):
         self.assertEqual((self.subjects(), git(self.root, "symbolic-ref", "--short", "HEAD")), (["initial"], "main"))
 
 
+class BuildFolderTest(GitBase):
+    """No commit of the tool takes a build folder, and no file of the project changes for that."""
+
+    def write(self, *names):
+        for name in names:
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_text("x\n")
+
+    def done(self, *names):
+        """Develop T1 in the project root: write the files, then finish the task. Return the files of the commit."""
+        self.create(tasks=ALONE)
+        self.move("T1", "dev")
+        self.write(*names)
+        self.move("T1", "review", "real-testing", "done")
+        return git(self.root, "show", "--name-only", "--format=", "HEAD").splitlines()
+
+    def test_done_leaves_the_build_folders_out_of_the_commit(self):
+        files = self.done("src/password.py", "build/app.o", "cmake-build-debug/Makefile", "out/app", "dist/app.tar",
+                          "target/debug/app", "node_modules/left-pad/index.js", "src/__pycache__/password.pyc",
+                          ".venv/bin/python", "venv/bin/python", "sub/project/build/lib.a")
+        self.assertEqual(files, ["specs/login/progress.json", "src/password.py"])
+        self.assertEqual(git(self.root, "status", "--porcelain"), "")
+
+    def test_a_folder_that_holds_a_cmake_cache_is_a_build_folder(self):
+        files = self.done("main.c", "bld arm/CMakeCache.txt", "bld arm/obj/main.o", "tools/[x86]/CMakeCache.txt",
+                          "tools/[x86]/main.o", "tools/run.sh")
+        self.assertEqual(files, ["main.c", "specs/login/progress.json", "tools/run.sh"])
+        self.assertEqual(git(self.root, "status", "--porcelain"), "")
+
+    def test_a_folder_that_holds_a_tracked_file_is_not_a_build_folder(self):
+        self.write("dist/tool.py", "docs/build/index.md", "gen/CMakeCache.txt")
+        git(self.root, "add", "--all")
+        git(self.root, "commit", "--quiet", "--message", "folders of the project")
+        files = self.done("dist/new.py", "docs/build/new.md", "gen/new.txt", "build/app.o", "CMakeCache.txt", "main.c")
+        self.assertEqual(files, ["CMakeCache.txt", "dist/new.py", "docs/build/new.md", "gen/new.txt", "main.c",
+                                 "specs/login/progress.json"])
+
+    def test_what_the_project_ignores_stays_out_and_its_gitignore_does_not_change(self):
+        (self.root / ".gitignore").write_text("*.log\n")
+        git(self.root, "add", "--all")
+        git(self.root, "commit", "--quiet", "--message", "ignore the logs")
+        self.assertEqual(self.done("app.py", "debug.log", "build/app.o"), ["app.py", "specs/login/progress.json"])
+        self.assertEqual((self.root / ".gitignore").read_text(), "*.log\n")
+
+    def test_git_ignores_the_build_folders_in_this_clone_only_and_each_one_once(self):
+        exclude = self.root / ".git" / "info" / "exclude"
+        exclude.parent.mkdir(exist_ok=True)
+        exclude.write_text("*.tmp")  # A file of the human partner, with no end of line.
+        self.create(tasks=ALONE)
+        self.move("T1", "dev")
+        self.write("build/app.o")
+        self.assertEqual(git(self.root, "status", "--porcelain", "--", ".", ":(exclude)specs"), "")
+        self.move("T1", "review", "real-testing", "done")
+        self.finish("T2")
+        lines = exclude.read_text().splitlines()
+        self.assertEqual((lines[0], lines.count("build/"), lines.count("cmake-build-*/")), ("*.tmp", 1, 1))
+
+
 class WorktreeTest(GitBase):
     """T1 and T2 can start together: each one is developed in its own git worktree, then merged in the root."""
 
@@ -389,6 +447,24 @@ class WorktreeTest(GitBase):
         shutil.rmtree(self.root / ".git")
         self.assertIn("not the top folder of a git repository",
                       self.move("T2", "dev", feature="signup")[0]["no_worktree"])
+
+    def test_a_build_folder_in_the_root_does_not_stop_the_worktrees(self):
+        (self.root / "build").mkdir()
+        (self.root / "build" / "app.o").write_text("x\n")
+        result, _ = self.move("T1", "dev")
+        self.assertEqual((result.get("worktree"), "no_worktree" in result), (".worktrees/login/T1", False))
+
+    def test_done_leaves_the_build_folders_of_the_worktree_and_of_the_root_out_of_the_commit(self):
+        tree = self.develop("T1", "one.txt", "1\n")
+        self.develop("T2", "two.txt", "2\n")
+        for name in ("build/app.o", "bld/CMakeCache.txt", "bld/app.o"):
+            (tree / name).parent.mkdir(exist_ok=True)
+            (tree / name).write_text("x\n")
+        (self.root / "build").mkdir()
+        (self.root / "build" / "app.o").write_text("x\n")
+        self.move("T1", "review", "real-testing", "done")
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD"),
+                         "one.txt\nspecs/login/progress.json")
 
     def test_done_merges_the_worktree_in_the_one_commit_of_the_task(self):
         first, second = self.develop("T1", "one.txt", "1\n"), self.develop("T2", "two.txt", "2\n")
