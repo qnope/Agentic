@@ -67,3 +67,21 @@ Limits:
 - The Cursor files follow the Cursor documentation. They were not tried in Cursor itself.
 
 The tests of the scripts: `python3 -m unittest test_install`.
+
+## The stop hook `tdd_gate`
+
+`hooks/tdd_gate.py` is the gate of the workflows `tdd-loop` and `tdd-bugfix`. It runs when the main agent wants to stop.
+
+| Situation | What the hook does |
+|---|---|
+| A started feature has a task that is not `done`, or its test command fails | It blocks the stop. Its message lists the problems, then tells the agent to continue the skill `tdd-implement` where it stopped: call `progress_next`, then go on from the status of each task. A task in `real-testing` goes on with the real test: it is not developed again. |
+| An agent works in the background (the developer, the reviewer or the real tester) | It allows the stop and prints nothing: the main agent only waits. The end of the agent wakes the main agent, and the hook runs again when the main agent wants to stop. |
+| The hook blocked the stop just before (`stop_hook_active`) | It allows the stop. This prevents an endless block. |
+| Every started feature is finished and its tests pass | It allows the stop. |
+
+Limits:
+
+- The hook knows that an agent works in the background from the list `background_tasks` that Claude Code gives to a `Stop` hook: an entry with the type `subagent`. It was tried with Claude Code 2.1.330. A background shell command does not count: the hook still blocks.
+- A tool that does not give this list (Cursor, an older Claude Code) makes the hook block once while an agent works in the background. The message then tells the main agent to wait for the output of this agent, and not to start it again.
+
+The tests of the hook: `python3 -m unittest discover -s hooks`.

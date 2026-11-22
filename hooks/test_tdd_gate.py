@@ -31,6 +31,12 @@ class HookTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("ctest --test-dir build", err)
 
+    def test_a_block_tells_to_continue_tdd_implement_where_it_stopped(self):
+        lines = run("{}", UNFINISHED)[2].splitlines()
+        self.assertEqual(lines[:-1], ["The tdd-loop workflow is not finished:", *UNFINISHED])
+        self.assertIn("Continue the skill tdd-implement where it stopped: call progress_next", lines[-1])
+        self.assertIn("still works on a task, wait for its output", lines[-1])
+
     def test_allows_when_already_blocked_once(self):
         self.assertEqual(run('{"stop_hook_active": true}', ["FAIL: login: task T2 is 'dev', not 'done'"])[0], 0)
 
