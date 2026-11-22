@@ -6,20 +6,23 @@ The project root is the current folder, or the `TDD_PROGRESS_ROOT` environment v
 Needs the official SDK: `pip install "mcp>=2"`.
 """
 import os
+import sys
 from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
-import progress
+sys.dont_write_bytecode = True  # No __pycache__ in the project: an uncommitted file there stops the worktrees.
+import progress  # noqa: E402
 
 server = MCPServer("tdd-progress", log_level="WARNING", instructions=(
     "Tracks the tasks of a feature in specs/<feature>/progress.json. "
     "A task goes new -> dev -> review -> real-testing -> done; "
     "a review or a real test can send it back to dev. "
     "Never edit progress.json by hand: use these tools. "
-    "In a git repository, the tools commit each done task and open the pull request of a finished feature."
+    "In a git repository, the tools commit each done task and open the pull request of a finished feature. "
+    "Tasks that can run at the same time each get a git worktree, merged at done."
 ))
 
 
@@ -57,7 +60,8 @@ def progress_next(feature: str) -> dict:
     ready: new tasks whose dependencies are all done. dev, review, real-testing: tasks in progress.
     escalated: tasks rejected 3 times, the human partner decides. waiting: ids of new
     tasks with an unfinished dependency. finished: true when every task is done.
-    test_command: the command that runs all the tests.
+    test_command: the command that runs all the tests. A task in progress that has
+    worktree is developed, reviewed and really tested in that folder, not in the project root.
     """
     return call(progress.next_tasks, feature)
 
@@ -68,13 +72,22 @@ def progress_update(feature: str, task_id: str, status: Literal["dev", "review",
     """Move one task to its next status. Any other move is refused, with the reason.
 
     new -> dev: needs every dependency done; in a git repository on the default branch,
-    the tool first creates the branch feature/<feature>. dev -> review. review ->
-    real-testing: note is required and holds the reviewer output, whose first line is APPROVED.
+    the tool first creates the branch feature/<feature>. When another task is ready or in
+    progress, the task gets its own git worktree: the result has worktree, the folder where
+    the task is developed, reviewed and really tested, at the same time as the other tasks.
+    If the worktree cannot be created, the result has no_worktree, the reason: the task is
+    then worked in the project root, one task at a time, and you give this reason to the
+    human partner in your report. dev -> review. review -> real-testing: note is required
+    and holds the reviewer output, whose first line is APPROVED.
     real-testing -> done: note is required and holds the real tester output, whose first
     line is PASSED; the tool then runs the test command, refused while it fails; then it
     commits every change of the project with the message "<feature> <task id>: <title>",
     refused while the commit fails. The result has commit: its short hash, or "" when the
-    project is not in git.
+    project is not in git. For a task with a worktree, the tool first merges the worktree
+    in the project root, in that same commit, then removes it: refused while the tests fail
+    in the worktree. On a merge conflict the task is not done: the tool sends it back to dev
+    itself, the result has the status dev and the conflict as note, for the developer to
+    resolve in the worktree.
     review -> dev or real-testing -> dev: the task is rejected, note is required and
     holds the remarks. The result has escalate: true when the task was rejected 3 times:
     stop and ask the human partner.

@@ -2,8 +2,11 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -19,6 +22,7 @@ PASS, FAIL = (0, "all green"), (1, "test_lock ... FAILED")
 REVIEW = "APPROVED\n- test_rejects_empty_password"
 REAL_TEST = "PASSED\n- B1: ran the program with an empty password -> it printed 'password required'"
 NOTES = {"real-testing": REVIEW, "done": REAL_TEST}
+ALONE = [TASKS[0], {**TASKS[1], "depends_on": ["T1"]}]  # One task at a time: each one is worked in the project root.
 
 
 class Base(unittest.TestCase):
@@ -219,6 +223,25 @@ class UpdateTest(Base):
         self.refused("unknown task 'T9'", self.move, "T9", "dev")
         self.refused("unknown status", self.move, "T1", "started")
 
+    @unittest.skipIf(os.name == "nt", "needs a file lock")
+    def test_updates_made_at_the_same_time_are_all_recorded(self):
+        self.create()
+        load = progress._load
+
+        def slow_load(*arguments):
+            data = load(*arguments)
+            time.sleep(0.05)
+            return data
+
+        with patch.object(progress, "_load", slow_load):
+            threads = [threading.Thread(target=progress.update, args=(self.root, "login", task_id, "dev"))
+                       for task_id in ("T1", "T2")]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        self.assertEqual([task["status"] for task in self.stored()["tasks"]], ["dev", "dev", "new"])
+
 
 class BranchTest(GitBase):
     def branch(self):
@@ -257,7 +280,7 @@ class BranchTest(GitBase):
 
 class CommitTest(GitBase):
     def test_done_commits_the_work_of_the_task_with_its_id(self):
-        self.create()
+        self.create(tasks=ALONE)
         self.move("T1", "dev")
         (self.root / "password.py").write_text("def check(): ...\n")
         result, _ = self.move("T1", "review", "real-testing", "done")
@@ -275,7 +298,7 @@ class CommitTest(GitBase):
         self.assertEqual(self.subjects(), ["initial"])
 
     def test_refuses_done_when_the_commit_fails(self):
-        self.create()
+        self.create(tasks=ALONE)
         self.move("T1", "dev", "review", "real-testing")
         self.refuse_every_commit()
         self.refused("lint failed", self.move, "T1", "done")
@@ -287,7 +310,7 @@ class CommitTest(GitBase):
         (self.root / ".gitignore").write_text("specs/\n")
         git(self.root, "add", "--all")
         git(self.root, "commit", "--quiet", "--message", "ignore the specs")
-        self.create()
+        self.create(tasks=ALONE)
         result, _ = self.finish("T1")
         self.assertEqual((result["status"], result["commit"]), ("done", ""))
         self.assertEqual(self.subjects()[0], "ignore the specs")
@@ -304,6 +327,199 @@ class CommitTest(GitBase):
         self.create()
         self.assertEqual(self.finish("T1")[0]["commit"], "")
         self.assertEqual((self.subjects(), git(self.root, "symbolic-ref", "--short", "HEAD")), (["initial"], "main"))
+
+
+class WorktreeTest(GitBase):
+    """T1 and T2 can start together: each one is developed in its own git worktree, then merged in the root."""
+
+    def setUp(self):
+        super().setUp()
+        (self.root / "app.txt").write_text("base\n")
+        git(self.root, "add", "--all")
+        git(self.root, "commit", "--quiet", "--message", "base")
+        self.create()
+
+    def develop(self, task_id, name, text):
+        """Start a task and write one file in its worktree. Return the worktree."""
+        tree = self.root / self.move(task_id, "dev")[0]["worktree"]
+        (tree / name).write_text(text)
+        return tree
+
+    def test_dev_gives_a_worktree_to_each_task_that_can_run_with_another(self):
+        first, second = self.move("T1", "dev")[0], self.move("T2", "dev")[0]
+        self.assertEqual((first["worktree"], second["worktree"]), (".worktrees/login/T1", ".worktrees/login/T2"))
+        self.assertEqual(git(self.root / first["worktree"], "branch", "--show-current"), "tdd/login/T1")
+        self.assertEqual((self.root / second["worktree"] / "app.txt").read_text(), "base\n")
+        self.assertEqual(self.stored()["tasks"][0]["worktree"], ".worktrees/login/T1")
+        self.assertEqual(progress.next_tasks(self.root, "login")["dev"][1]["worktree"], ".worktrees/login/T2")
+        self.assertEqual(git(self.root, "status", "--porcelain", "--", ".", ":(exclude)specs"), "")
+
+    def test_the_worktree_of_a_task_holds_the_work_of_the_tasks_it_depends_on(self):
+        self.create(tasks=[TASKS[0], TASKS[1], {"id": "T3", "title": "Lock after 3 failures", "depends_on": ["T1"]}])
+        self.develop("T1", "one.txt", "1\n")
+        self.develop("T2", "two.txt", "2\n")
+        self.refused("not done: T1", self.move, "T3", "dev")
+        self.move("T1", "review", "real-testing", "done")
+        tree = self.develop("T3", "three.txt", "3\n")
+        self.assertEqual(((tree / "one.txt").read_text(), (tree / "two.txt").exists()), ("1\n", False))
+
+    def test_the_worktree_of_a_task_holds_the_work_of_a_dependency_developed_in_the_root(self):
+        self.create(tasks=[TASKS[0], {**TASKS[1], "depends_on": ["T1"]}, {**TASKS[2], "depends_on": ["T1"]}])
+        self.assertNotIn("worktree", self.move("T1", "dev")[0])
+        (self.root / "one.txt").write_text("1\n")
+        self.move("T1", "review", "real-testing", "done")
+        trees = [self.develop("T2", "two.txt", "2\n"), self.develop("T3", "three.txt", "3\n")]
+        self.assertEqual([(tree / "one.txt").read_text() for tree in trees], ["1\n", "1\n"])
+
+    def test_dev_keeps_a_task_that_runs_alone_in_the_root(self):
+        self.create(tasks=[TASKS[0], {"id": "T2", "title": "Hash the password", "depends_on": ["T1"]}])
+        result, _ = self.move("T1", "dev")
+        self.assertEqual({"worktree", "no_worktree"} & result.keys(), set())
+        self.assertFalse((self.root / ".worktrees").exists())
+
+    def test_dev_says_why_a_task_gets_no_worktree(self):
+        (self.root / "notes.txt").write_text("not committed\n")
+        result, _ = self.move("T1", "dev")
+        self.assertIn("uncommitted changes outside specs/: notes.txt", result["no_worktree"])
+        self.assertEqual((result["status"], "worktree" in result), ("dev", False))
+        shutil.rmtree(self.root / ".git")
+        git(self.root, "init", "--quiet")
+        self.create(feature="signup")
+        self.assertIn("no commit", self.move("T1", "dev", feature="signup")[0]["no_worktree"])
+        shutil.rmtree(self.root / ".git")
+        self.assertIn("not the top folder of a git repository",
+                      self.move("T2", "dev", feature="signup")[0]["no_worktree"])
+
+    def test_done_merges_the_worktree_in_the_one_commit_of_the_task(self):
+        first, second = self.develop("T1", "one.txt", "1\n"), self.develop("T2", "two.txt", "2\n")
+        result, run = self.move("T1", "review", "real-testing", "done")
+        self.assertEqual([call.args[1] for call in run.call_args_list], [first, self.root])
+        self.assertEqual((result["status"], "worktree" in result, first.exists()), ("done", False, False))
+        self.assertNotIn("worktree", self.stored()["tasks"][0])
+        self.assertEqual(result["commit"], git(self.root, "rev-parse", "--short", "HEAD"))
+        self.assertEqual(git(self.root, "show", "--name-only", "--format=", "HEAD"),
+                         "one.txt\nspecs/login/progress.json")
+        self.move("T2", "review", "real-testing", "done")
+        self.assertEqual(self.subjects(), ["login T2: Hash the password", "login T1: Reject an empty password",
+                                           "base", "initial"])
+        self.assertEqual((git(self.root, "status", "--porcelain"), git(self.root, "branch", "--show-current")),
+                         ("", "feature/login"))
+        self.assertEqual(sorted(path.name for path in self.root.glob("*.txt")), ["app.txt", "one.txt", "two.txt"])
+        self.assertEqual((git(self.root, "branch", "--list", "tdd/*"), second.exists()), ("", False))
+        self.assertFalse((self.root / ".worktrees").exists())
+
+    def test_done_sends_a_merge_conflict_back_to_dev_with_the_conflict_as_note(self):
+        self.develop("T1", "app.txt", "one\n")
+        tree = self.develop("T2", "app.txt", "two\n")
+        self.move("T1", "review", "real-testing", "done")
+        head = git(self.root, "rev-parse", "HEAD")
+        result, run = self.move("T2", "review", "real-testing", "done")
+        self.assertEqual((result["status"], result["rejections"], result["escalate"]), ("dev", 1, False))
+        self.assertEqual(result["note"], "app.txt: merge conflict with the last commit of the project root -> in the "
+                         f"worktree .worktrees/login/T2, run `git merge {head}`, keep the work of both sides and make "
+                         "the tests pass")
+        stored = self.stored()["tasks"][1]
+        self.assertEqual((stored["status"], stored["note"]), ("dev", result["note"]))
+        self.assertEqual((git(self.root, "rev-parse", "HEAD"), git(tree, "status", "--porcelain")), (head, ""))
+        run.assert_not_called()
+        subprocess.run(["git", "merge", head], cwd=tree, capture_output=True)
+        (tree / "app.txt").write_text("one and two\n")
+        self.assertEqual(self.move("T2", "review", "real-testing", "done")[0]["status"], "done")
+        self.assertEqual((self.root / "app.txt").read_text(), "one and two\n")
+        self.assertEqual(git(self.root, "status", "--porcelain", "--", ".", ":(exclude)specs"), "")
+
+    def test_done_runs_the_tests_in_the_worktree_before_the_root_changes(self):
+        tree = self.develop("T1", "one.txt", "1\n")
+        self.move("T1", "review", "real-testing")
+        self.refused("failed in the worktree .worktrees/login/T1", self.move, "T1", "done", tests=FAIL)
+        self.refused("test_lock ... FAILED", self.move, "T1", "done", tests=FAIL)
+        self.assertEqual((self.subjects()[0], tree.exists()), ("base", True))
+        self.assertEqual(self.stored()["tasks"][0]["status"], "real-testing")
+
+    def test_done_can_be_asked_again_when_the_tests_fail_in_the_root_after_the_merge(self):
+        self.develop("T1", "one.txt", "1\n")
+        self.move("T1", "review", "real-testing")
+        with patch.object(progress, "run_tests", side_effect=[PASS, FAIL]):
+            self.refused("failed (exit 1)", progress.update, self.root, "login", "T1", "done", REAL_TEST)
+        self.assertEqual((self.root / "one.txt").read_text(), "1\n")
+        self.assertEqual(self.move("T1", "done")[0]["status"], "done")
+        self.assertEqual(self.subjects()[:2], ["login T1: Reject an empty password", "base"])
+
+    def test_done_can_be_asked_again_when_the_commit_fails_in_the_root_after_the_merge(self):
+        tree = self.develop("T1", "one.txt", "1\n")
+        self.move("T1", "review", "real-testing")
+        self.refuse_every_commit()
+        self.refused("lint failed", self.move, "T1", "done")
+        self.assertEqual((self.stored()["tasks"][0]["status"], tree.exists()), ("real-testing", True))
+        (self.root / ".git" / "hooks" / "pre-commit").unlink()
+        self.assertEqual(self.move("T1", "done")[0]["status"], "done")
+        self.assertEqual(self.subjects()[:2], ["login T1: Reject an empty password", "base"])
+
+    def test_done_gives_the_commit_of_the_merge_when_the_root_has_nothing_more_to_commit(self):
+        (self.root / ".gitignore").write_text("specs/\n")
+        git(self.root, "add", "--all")
+        git(self.root, "commit", "--quiet", "--message", "ignore the specs")
+        self.develop("T1", "one.txt", "1\n")
+        result, _ = self.move("T1", "review", "real-testing", "done")
+        self.assertEqual(result["commit"], git(self.root, "rev-parse", "--short", "HEAD"))
+        self.assertEqual(self.subjects()[:2], ["login T1: Reject an empty password", "ignore the specs"])
+
+    def test_done_refuses_a_merge_that_git_cannot_start(self):
+        tree = self.develop("T1", "one.txt", "1\n")
+        self.move("T1", "review", "real-testing")
+        git(tree, "checkout", "--quiet", "--orphan", "other")
+        git(tree, "commit", "--quiet", "-m", "no common history")
+        self.refused("unrelated histories", self.move, "T1", "done")
+        self.assertEqual(self.subjects()[0], "base")
+
+    def test_dev_refuses_a_task_with_no_worktree_while_another_task_has_one(self):
+        self.move("T1", "dev")
+        (self.root / "notes.txt").write_text("not committed\n")
+        self.refused("stays new: it gets no worktree (uncommitted changes outside specs/: notes.txt",
+                     self.move, "T2", "dev")
+        self.assertEqual(self.stored()["tasks"][1]["status"], "new")
+
+    def test_done_commits_the_specs_folder_of_the_root_with_the_evidence_of_the_worktree(self):
+        tree = self.develop("T1", "one.txt", "1\n")
+        evidence = Path("specs/login/real-testing/T1/output.txt")
+        (tree / evidence).parent.mkdir(parents=True)
+        (tree / evidence).write_text("what the real tester saw\n")
+        (tree / "specs/login/spec.md").write_text("old copy\n")
+        (self.root / "specs/login/spec.md").write_text("the spec\n")
+        self.move("T1", "review", "real-testing", "done")
+        self.assertEqual((self.root / evidence).read_text(), "what the real tester saw\n")
+        self.assertEqual(git(self.root, "show", "HEAD:specs/login/spec.md"), "the spec")
+        self.assertEqual(git(self.root, "show", "--format=", "--name-only", "HEAD").splitlines(), [
+            "one.txt", "specs/login/progress.json", f"{evidence}", "specs/login/spec.md"])
+        self.assertEqual(git(self.root, "status", "--porcelain"), "")
+
+    def test_done_after_a_conflict_is_not_stopped_by_the_evidence_that_another_task_committed(self):
+        self.create(tasks=[{**task, "depends_on": []} for task in TASKS])
+        self.develop("T1", "app.txt", "one\n")
+        tree = self.develop("T2", "app.txt", "two\n")
+        self.develop("T3", "three.txt", "3\n")
+        evidence = Path("specs/login/real-testing/T2/output.txt")
+        (tree / evidence).parent.mkdir(parents=True)
+        (tree / evidence).write_text("what the real tester saw\n")
+        self.move("T1", "review", "real-testing", "done")
+        self.assertEqual(self.move("T2", "review", "real-testing", "done")[0]["status"], "dev")
+        self.move("T3", "review", "real-testing", "done")
+        self.assertEqual(git(self.root, "show", f"HEAD:{evidence}"), "what the real tester saw")
+        subprocess.run(["git", "merge", git(self.root, "rev-parse", "HEAD")], cwd=tree, capture_output=True)
+        (tree / "app.txt").write_text("one and two\n")
+        self.assertEqual(self.move("T2", "review", "real-testing", "done")[0]["status"], "done")
+        self.assertEqual(((self.root / "app.txt").read_text(), git(self.root, "status", "--porcelain")),
+                         ("one and two\n", ""))
+
+    def test_done_refuses_a_worktree_that_holds_no_change(self):
+        self.move("T1", "dev", "review", "real-testing")
+        self.refused("holds no change", self.move, "T1", "done")
+        self.assertEqual(self.stored()["tasks"][0]["status"], "real-testing")
+
+    def test_refuses_to_run_from_inside_a_worktree(self):
+        tree = self.develop("T1", "one.txt", "1\n")
+        self.refused("from the project root", progress.next_tasks, tree, "login")
+        self.refused("from the project root", progress.update, tree, "login", "T1", "review")
 
 
 class StatusTest(Base):
@@ -428,7 +644,7 @@ class PullRequestTest(GitBase):
             return progress.pull_request(self.root, "login"), opener
 
     def test_closes_the_feature_pushes_the_branch_and_opens_the_pull_request(self):
-        self.create(tasks=TASKS[:2])
+        self.create(tasks=ALONE)
         self.finish("T1")
         self.finish("T2")
         result, opener = self.pull_request()
@@ -443,7 +659,7 @@ class PullRequestTest(GitBase):
             self.assertIn(text, body)
 
     def test_refuses_an_unfinished_feature_and_pushes_nothing(self):
-        self.create(tasks=TASKS[:2])
+        self.create(tasks=ALONE)
         self.finish("T1")
         self.refused("login: task T2 is 'new', not 'done'", self.pull_request)
         self.finish("T2")
