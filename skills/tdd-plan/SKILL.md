@@ -14,6 +14,8 @@ Second step of the `tdd-loop` workflow: `tdd-elaborate -> tdd-plan -> tdd-implem
 
 ## Step 1 — Split the spec into tasks
 - A task is the smallest piece that can be developed and tested alone: one behavior, or a few behaviors that cannot be tested apart.
+- A task is 10 minutes at most for the human partner. Estimate each task: the minutes the human partner would need to write its tests and its code by hand. Above 10 minutes, split the task into smaller tasks.
+- If one behavior alone is above 10 minutes: write no file. Name the behavior, say that a task is 10 minutes at most, and ask the human partner to split the behavior in the spec.
 - Every behavior of the spec (`B1`, `B2`, ...) is in exactly one task.
 - Task ids are `T1`, `T2`, ... in the order of development.
 - A task depends on another task only when it needs code that the other task writes. No cycle.
@@ -32,6 +34,9 @@ One file per task, `specs/<feature>/tasks/<id>.md`, in exactly this format:
 
 ## Tests to write
 - <one test: the input and the expected result>
+
+## Estimate
+<number> minutes
 
 ## Depends on
 <task ids separated by commas, or `None`>
@@ -52,4 +57,4 @@ echo '[{"id": "T1", "title": "<title>", "depends_on": []}]' | python3 mcp-server
 If the tool refuses, it says why: fix the tasks and call again.
 
 ## Step 4 — Report
-List the tasks: id, title, depends on. Say that the next step is `tdd-implement`. If the skill `tdd-implement` is available, continue with it.
+List the tasks: id, title, estimate, depends on. Say that the next step is `tdd-implement`. If the skill `tdd-implement` is available, continue with it.
