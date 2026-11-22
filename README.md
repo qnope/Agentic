@@ -52,6 +52,28 @@ Rules:
 - You can run the script again, for example after an update of this repository. Each line of its output says `created`, `updated` or `unchanged` for one file or one Python environment.
 - If a part is unknown or a config file is not valid JSON, the script writes nothing and exits with code 1.
 
+Git:
+
+- Git ignores what the script installed. The script writes the installed paths in a block of the `.gitignore` of the project. It creates this file if the project has none. Example:
+
+  ```
+  # >>> Agentic: paths written by install_claude.py and install_cursor.py >>>
+  /.claude/agents/tdd-reviewer.md
+  /.claude/skills/tdd-plan/
+  /.mcp.json
+  /hooks/tdd_gate.py
+  /mcp-servers/tdd-progress/
+  # <<< Agentic <<<
+  ```
+
+- The block names only installed paths: the folder of one skill, the file of one agent, the file of one hook, the folder of one server. It never names a whole folder such as `.claude/` or `hooks/`: git still sees your own skills, agents, hooks and servers.
+- Each install adds its paths to the same block, each path once. The script changes no line outside the block, and removes no line of the block.
+- A config file (`.claude/settings.json`, `.mcp.json`, `.cursor/hooks.json`, `.cursor/mcp.json`) is in the block only when it holds nothing but what this install writes. A config file that also holds your own settings is not in the block: git must keep your settings. The script then prints `not ignored <file>`.
+- Commit the `.gitignore` after an install that created or updated it. The workflow `tdd-loop` gives a task its own worktree only when no file outside `specs/` has an uncommitted change.
+- To make git see one path of the block again, write `!<path>` on a line under the block. Example: `!/.mcp.json`.
+- Git keeps a file that is already committed, even when the block names it. To remove it from git and keep it on the disk: `git rm -r --cached <path>`, then commit.
+- When the project is this repository, the block names only the copies in `.claude/` or `.cursor/`. The parts themselves, such as `hooks/<name>.py` and `mcp-servers/<name>/`, stay visible to git.
+
 Python environment of an MCP server:
 
 - When the server has a `requirements.txt`, the script creates the virtual environment `mcp-servers/<name>/.venv` with `python -m venv`, then runs `pip install -r requirements.txt` in it. It uses the Python that runs the script.

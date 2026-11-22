@@ -85,8 +85,9 @@ class ClaudeTest(Base):
         code, out, _ = self.install("claude", "skill/plan")
         self.assertEqual(code, 0)
         self.assertEqual(self.files(), [
-            ".claude/agents/worker.md", ".claude/skills/plan/SKILL.md", ".claude/skills/plan/Steps.md", ".mcp.json",
-            "mcp-servers/tracker/requirements.txt", "mcp-servers/tracker/server.py", "mcp-servers/tracker/tool.py",
+            ".claude/agents/worker.md", ".claude/skills/plan/SKILL.md", ".claude/skills/plan/Steps.md", ".gitignore",
+            ".mcp.json", "mcp-servers/tracker/requirements.txt", "mcp-servers/tracker/server.py",
+            "mcp-servers/tracker/tool.py",
         ])
         self.assertEqual(self.json(".mcp.json"), {"mcpServers": {"tracker": {
             "command": "mcp-servers/tracker/.venv/bin/python", "args": ["mcp-servers/tracker/server.py"]}}})
@@ -94,14 +95,14 @@ class ClaudeTest(Base):
 
     def test_agent_alone(self):
         self.assertEqual(self.install("claude", "agent/other")[0], 0)
-        self.assertEqual(self.files(), [".claude/agents/other.md"])
+        self.assertEqual(self.files(), [".claude/agents/other.md", ".gitignore"])
 
     def test_hook_is_copied_and_registered_once_and_other_settings_are_kept(self):
         (self.project / ".claude").mkdir()
         (self.project / ".claude/settings.json").write_text('{"permissions": {"allow": ["Read"]}}')
         self.install("claude", "hook/gate")
         self.install("claude", "hook/gate")
-        self.assertEqual(self.files(), [".claude/settings.json", "hooks/gate.py"])
+        self.assertEqual(self.files(), [".claude/settings.json", ".gitignore", "hooks/gate.py"])
         self.assertEqual(self.json(".claude/settings.json"), {
             "permissions": {"allow": ["Read"]},
             "hooks": {"Stop": [{"hooks": [{"type": "command",
@@ -125,7 +126,7 @@ class ClaudeTest(Base):
 
     def test_folder_names_and_file_paths_are_accepted_and_several_parts(self):
         self.assertEqual(self.install("claude", "agents/other.md", "skills/build/")[0], 0)
-        self.assertEqual(self.files(), [".claude/agents/other.md", ".claude/skills/build/SKILL.md"])
+        self.assertEqual(self.files(), [".claude/agents/other.md", ".claude/skills/build/SKILL.md", ".gitignore"])
 
     def test_says_what_changed(self):
         self.assertIn("created .claude/agents/other.md", self.install("claude", "agent/other")[1])
@@ -155,7 +156,7 @@ class ClaudeTest(Base):
             (self.source / path).parent.mkdir(parents=True, exist_ok=True)
             (self.source / path).write_text("Start the agent `.claude/agents/runner.md`.")
         self.assertEqual(self.install("cursor", "skill/make")[0], 0)
-        self.assertEqual(self.files(), [".cursor/agents/runner.md", ".cursor/skills/make/SKILL.md"])
+        self.assertEqual(self.files(), [".cursor/agents/runner.md", ".cursor/skills/make/SKILL.md", ".gitignore"])
         self.assertIn("`.cursor/agents/runner.md`", (self.project / ".cursor/skills/make/SKILL.md").read_text())
 
     def test_refuses_a_config_file_that_is_not_json(self):
@@ -183,7 +184,7 @@ class CursorTest(Base):
         self.assertEqual(self.files(), [
             ".cursor/agents/worker.md", ".cursor/hooks.json", ".cursor/hooks/gate.py", ".cursor/mcp.json",
             ".cursor/skills/build/SKILL.md", ".cursor/skills/plan/SKILL.md", ".cursor/skills/plan/Steps.md",
-            "hooks/gate.py", "mcp-servers/tracker/requirements.txt", "mcp-servers/tracker/server.py",
+            ".gitignore", "hooks/gate.py", "mcp-servers/tracker/requirements.txt", "mcp-servers/tracker/server.py",
             "mcp-servers/tracker/tool.py",
         ])
         self.assertEqual(self.json(".cursor/mcp.json"), {"mcpServers": {"tracker": {
@@ -251,6 +252,7 @@ class EnvironmentTest(Base):
         self.assertIn("no network", err)
         self.assertIn("created .claude/skills/plan/SKILL.md", out)
         self.assertIn(".mcp.json", self.files())
+        self.assertIn(".gitignore", self.files())
         self.run_command.failing = None
         self.run_command.commands.clear()
         self.assertEqual(self.install("claude", "skill/plan")[0], 0)
@@ -278,6 +280,79 @@ class EnvironmentTest(Base):
         done = subprocess.run([python, "-c", "import sys; print(sys.prefix)"], cwd=self.project,
                               capture_output=True, text=True)
         self.assertEqual(Path(done.stdout.strip()).resolve(), self.venv.resolve())
+
+
+class GitignoreTest(Base):
+    def gitignore(self, project=None):
+        return ((project or self.project) / ".gitignore").read_text()
+
+    def block(self, *paths):
+        """The block of the install in `.gitignore`, with these paths."""
+        return "\n".join(["# >>> Agentic: paths written by install_claude.py and install_cursor.py >>>", *paths,
+                          "# <<< Agentic <<<"]) + "\n"
+
+    def seen_by_git(self):
+        """The files of the project that git does not ignore. The ignore file of the user of the machine is not read."""
+        subprocess.run(["git", "init", "--quiet"], cwd=self.project, check=True)
+        done = subprocess.run(["git", "-c", f"core.excludesFile={self.project / 'none'}", "status", "--porcelain",
+                               "--untracked-files=all"], cwd=self.project, capture_output=True, text=True, check=True)
+        return sorted(line[3:] for line in done.stdout.splitlines())
+
+    def test_git_ignores_everything_that_the_install_wrote(self):
+        code, out, _ = self.install("claude", "workflow/loop")
+        self.assertEqual(code, 0)
+        self.assertIn("created .gitignore", out)
+        self.assertEqual(self.gitignore(), self.block(
+            "/.claude/agents/worker.md", "/.claude/settings.json", "/.claude/skills/build/", "/.claude/skills/plan/",
+            "/.mcp.json", "/hooks/gate.py", "/mcp-servers/tracker/"))
+        self.assertEqual(self.seen_by_git(), [".gitignore"])
+
+    def test_next_installs_add_their_paths_once_to_the_same_block(self):
+        self.install("claude", "agent/other")
+        self.assertIn("unchanged .gitignore", self.install("claude", "agent/other")[1])
+        self.assertEqual(self.gitignore(), self.block("/.claude/agents/other.md"))
+        self.assertIn("updated .gitignore", self.install("cursor", "workflow/loop")[1])
+        self.assertEqual(self.gitignore(), self.block(
+            "/.claude/agents/other.md", "/.cursor/agents/worker.md", "/.cursor/hooks.json", "/.cursor/hooks/gate.py",
+            "/.cursor/mcp.json", "/.cursor/skills/build/", "/.cursor/skills/plan/", "/hooks/gate.py",
+            "/mcp-servers/tracker/"))
+
+    def test_lines_and_files_of_the_user_are_kept_and_git_still_sees_them(self):
+        mine = [".claude/agents/mine.md", ".claude/skills/mine/SKILL.md", "hooks/mine.py", "mcp-servers/mine/server.py"]
+        for path in mine:
+            (self.project / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.project / path).write_text("mine")
+        (self.project / ".gitignore").write_text("build/\n*.log")
+        self.install("claude", "agent/other")
+        with open(self.project / ".gitignore", "a") as file:
+            file.write("\n# mine\ndist/\n")
+        self.install("claude", "workflow/loop")
+        self.assertEqual(self.gitignore(), "build/\n*.log\n\n" + self.block(
+            "/.claude/agents/other.md", "/.claude/agents/worker.md", "/.claude/settings.json", "/.claude/skills/build/",
+            "/.claude/skills/plan/", "/.mcp.json", "/hooks/gate.py", "/mcp-servers/tracker/") + "\n# mine\ndist/\n")
+        self.assertEqual(self.seen_by_git(), sorted([*mine, ".gitignore"]))
+
+    def test_config_file_is_ignored_only_when_it_holds_nothing_but_what_the_install_writes(self):
+        (self.project / ".claude").mkdir()
+        (self.project / ".claude/settings.json").write_text('{"permissions": {"allow": ["Read"]}}')
+        out = self.install("claude", "hook/gate", "mcp-server/tracker")[1]
+        self.assertIn("not ignored .claude/settings.json", out)
+        self.assertNotIn("not ignored .mcp.json", out)
+        self.assertEqual(self.gitignore(), self.block("/.mcp.json", "/hooks/gate.py", "/mcp-servers/tracker/"))
+        # A config file of an install that wrote no `.gitignore` holds nothing of the user: it is ignored.
+        (self.project / ".claude/settings.json").unlink()
+        self.install("claude", "hook/gate")
+        (self.project / ".gitignore").unlink()
+        self.assertNotIn("not ignored", self.install("claude", "hook/gate")[1])
+        self.assertEqual(self.gitignore(), self.block("/.claude/settings.json", "/hooks/gate.py"))
+
+    def test_parts_of_the_repository_itself_are_not_ignored(self):
+        (self.source / ".claude/skills/make").mkdir(parents=True)
+        (self.source / ".claude/skills/make/SKILL.md").write_text("Make.")
+        self.assertEqual(self.install("claude", "workflow/loop", "skill/make", project=self.source)[0], 0)
+        self.assertEqual(self.gitignore(self.source), self.block(
+            "/.claude/agents/worker.md", "/.claude/settings.json", "/.claude/skills/build/", "/.claude/skills/plan/",
+            "/.mcp.json"))
 
 
 class EntryScriptTest(Base):
