@@ -354,6 +354,23 @@ class WorktreeTest(GitBase):
         self.assertEqual(progress.next_tasks(self.root, "login")["dev"][1]["worktree"], ".worktrees/login/T2")
         self.assertEqual(git(self.root, "status", "--porcelain", "--", ".", ":(exclude)specs"), "")
 
+    def test_the_worktree_of_a_task_holds_the_work_of_the_tasks_it_depends_on(self):
+        self.create(tasks=[TASKS[0], TASKS[1], {"id": "T3", "title": "Lock after 3 failures", "depends_on": ["T1"]}])
+        self.develop("T1", "one.txt", "1\n")
+        self.develop("T2", "two.txt", "2\n")
+        self.refused("not done: T1", self.move, "T3", "dev")
+        self.move("T1", "review", "real-testing", "done")
+        tree = self.develop("T3", "three.txt", "3\n")
+        self.assertEqual(((tree / "one.txt").read_text(), (tree / "two.txt").exists()), ("1\n", False))
+
+    def test_the_worktree_of_a_task_holds_the_work_of_a_dependency_developed_in_the_root(self):
+        self.create(tasks=[TASKS[0], {**TASKS[1], "depends_on": ["T1"]}, {**TASKS[2], "depends_on": ["T1"]}])
+        self.assertNotIn("worktree", self.move("T1", "dev")[0])
+        (self.root / "one.txt").write_text("1\n")
+        self.move("T1", "review", "real-testing", "done")
+        trees = [self.develop("T2", "two.txt", "2\n"), self.develop("T3", "three.txt", "3\n")]
+        self.assertEqual([(tree / "one.txt").read_text() for tree in trees], ["1\n", "1\n"])
+
     def test_dev_keeps_a_task_that_runs_alone_in_the_root(self):
         self.create(tasks=[TASKS[0], {"id": "T2", "title": "Hash the password", "depends_on": ["T1"]}])
         result, _ = self.move("T1", "dev")
