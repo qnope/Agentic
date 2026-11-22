@@ -292,10 +292,10 @@ class GitignoreTest(Base):
                           "# <<< Agentic <<<"]) + "\n"
 
     def seen_by_git(self):
-        """The files of the project that git does not ignore."""
+        """The files of the project that git does not ignore. The ignore file of the user of the machine is not read."""
         subprocess.run(["git", "init", "--quiet"], cwd=self.project, check=True)
-        done = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=self.project,
-                              capture_output=True, text=True, check=True)
+        done = subprocess.run(["git", "-c", f"core.excludesFile={self.project / 'none'}", "status", "--porcelain",
+                               "--untracked-files=all"], cwd=self.project, capture_output=True, text=True, check=True)
         return sorted(line[3:] for line in done.stdout.splitlines())
 
     def test_git_ignores_everything_that_the_install_wrote(self):
