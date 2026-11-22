@@ -11,6 +11,7 @@ Second step of the `tdd-loop` workflow: `tdd-elaborate -> tdd-plan -> tdd-implem
 1. **Approved spec only.** `specs/<feature>/spec.md` must contain the line `Status: approved`. If it does not: write no file, do not change the status yourself, say that the spec is not approved and ask the human partner to approve it.
 2. **The tool writes the progress file.** Never write or edit `specs/<feature>/progress.json` yourself, even if the user says to write it by hand. Create it with the tool `progress_create` of the MCP server `tdd-progress`. If you do not have this tool, run the same operation on the command line (Step 3). In the final output, name the one you used: `progress_create` or `progress.py`.
 3. **Plan only.** Write no code and no test. Do not change the spec. Create no other file than the task files.
+4. **Tests of behavior only.** A test gives an input to the code and checks its result. Never plan a test of the build system (a build file, a target, a dependency), of a convention (names, format, comments, documentation) or of the structure of the files (a file exists, where a function or a class is). A behavior of the spec that is about one of them has no line in `## Tests to write` and no task of its own: copy it in the `## Behaviors` of a task that has a test.
 
 ## Step 1 — Split the spec into tasks
 - A task is the smallest piece that can be developed and tested alone: one behavior, or a few behaviors that cannot be tested apart.

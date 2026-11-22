@@ -49,6 +49,8 @@ Status: draft
 
 One behavior per line. Each one can be checked by one test.
 
+A behavior is what the feature does for its user: an input and the result. The build system (a build file, a target, a dependency), a convention (names, format, comments, documentation) and the structure of the files (where a function, a class or a test is) are never a behavior: no test checks them. Write what the request says about them at the end of `## Goal`.
+
 ## Step 2 — Ask for the approval
 Give the path of the spec, ask "Do you approve this spec?" and stop. Do not go to the next step.
 
