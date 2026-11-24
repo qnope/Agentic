@@ -14,9 +14,9 @@ Second step of the `tdd-loop` workflow: `tdd-elaborate -> tdd-plan -> tdd-implem
 4. **Tests of behavior only.** A test gives an input to the code and checks its result. Never plan a test of the build system (a build file, a target, a dependency), of a convention (names, format, comments, documentation) or of the structure of the files (a file exists, where a function or a class is). A behavior of the spec that is about one of them has no line in `## Tests to write` and no task of its own: copy it in the `## Behaviors` of a task that has a test.
 
 ## Step 1 — Split the spec into tasks
-- A task is one feature: behaviors that a user uses together, and that can be tested from end to end. Never make one task per behavior: the developer does one Red-Green-Refactor cycle per behavior inside the task.
+- A task is one feature: behaviors that a user uses together, and that can be tested from end to end. Do not split a feature into one task per behavior: the developer does one Red-Green-Refactor cycle per behavior inside the task.
 - All the behaviors of the spec go in one task, except in these two cases:
-  - **Independent parts.** Two parts are independent when no part needs the code of the other and they change different files. Each independent part is its own task, and no task depends on another: they are developed at the same time, each in its own worktree.
+  - **Independent parts.** Two parts are independent when no part needs the code of the other and they change different files. Each independent part is its own task, and these tasks do not depend on each other: they are developed at the same time, each in its own worktree.
   - **Above 60 minutes.** A task is 60 minutes at most for the human partner. Estimate each task: the minutes the human partner would need to write its tests and its code by hand. Above 60 minutes, split the task into tasks that each give a feature that works from end to end. A later task depends on the earlier one.
 - If one behavior alone is above 60 minutes: write no file. Name the behavior, say that a task is 60 minutes at most, and ask the human partner to split the behavior in the spec.
 - Every behavior of the spec (`B1`, `B2`, ...) is in exactly one task.
@@ -48,7 +48,7 @@ One file per task, `specs/<feature>/tasks/<id>.md`, in exactly this format:
 <task ids separated by commas, or `None`>
 ```
 
-`## Acceptance criteria` holds 1 to 3 criteria, `A1` to `A3`. Each one uses several behaviors of the task together. The task is done when every criterion gives its result.
+`## Acceptance criteria` holds 1 to 3 criteria, `A1` to `A3`. Each one is a use of the whole feature from end to end: it combines behaviors of the task.
 
 ## Step 3 — Create the progress file
 Call `progress_create` with:
