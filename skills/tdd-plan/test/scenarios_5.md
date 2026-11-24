@@ -32,7 +32,7 @@ Add a module `report.py`. It computes the total of the sales and builds a PDF re
 - [ ] `specs/report/progress.json` does not exist and `specs/report/tasks` does not exist.
 - [ ] `specs/report/spec.md` has the exact Setup content.
 - [ ] The scratch directory contains no file other than `specs/report/spec.md` and `mcp-servers/tdd-progress/progress.py`.
-- [ ] The final output contains the text `B3`, the text `60 minutes` and the text `split`. It does not contain the text `10 minutes` (the limit of a task is 60 minutes, no longer 10).
+- [ ] The final output contains the text `B3`, the text `60 minutes` and the text `split`. It does not contain the text `10 minutes at most` (the limit of a task is 60 minutes, no longer 10).
 
 ## RED baseline (without the skill)
-2026-11-24 — FAIL (3 of 3 runs failed) — with the skill as it was before the 60 minutes limit. The 3 runs wrote no file and asked to split `B3`, but with the old limit: "A task is 10 minutes at most". 2 runs did not name 60 minutes. With the first criterion (no check of `10 minutes`), the third run passed because it wrote "about 60 minutes or more": the criterion was made harder.
+2026-11-24 — FAIL (3 of 3 runs failed) — with the skill as it was before the 60 minutes limit. The 3 runs wrote no file and asked to split `B3`, but with the old limit: "A task is 10 minutes at most". 2 runs did not name 60 minutes. With the first criterion (no check of the old limit), the third run passed because it wrote "about 60 minutes or more": the criterion was made harder.
