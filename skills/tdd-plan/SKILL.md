@@ -1,6 +1,6 @@
 ---
 name: tdd-plan
-description: Splits an approved spec `specs/<feature>/spec.md` into small task files and creates the progress file with the tdd-progress tool. It is the second step of the tdd-loop workflow and writes no code. Use when the user asks to plan a feature or to split a spec into tasks, or after tdd-elaborate when the spec is approved.
+description: Splits an approved spec `specs/<feature>/spec.md` into task files, one feature per task, and creates the progress file with the tdd-progress tool. It is the second step of the tdd-loop workflow and writes no code. Use when the user asks to plan a feature or to split a spec into tasks, or after tdd-elaborate when the spec is approved.
 ---
 
 # TDD Plan
@@ -14,9 +14,11 @@ Second step of the `tdd-loop` workflow: `tdd-elaborate -> tdd-plan -> tdd-implem
 4. **Tests of behavior only.** A test gives an input to the code and checks its result. Never plan a test of the build system (a build file, a target, a dependency), of a convention (names, format, comments, documentation) or of the structure of the files (a file exists, where a function or a class is). A behavior of the spec that is about one of them has no line in `## Tests to write` and no task of its own: copy it in the `## Behaviors` of a task that has a test.
 
 ## Step 1 — Split the spec into tasks
-- A task is the smallest piece that can be developed and tested alone: one behavior, or a few behaviors that cannot be tested apart.
-- A task is 10 minutes at most for the human partner. Estimate each task: the minutes the human partner would need to write its tests and its code by hand. Above 10 minutes, split the task into smaller tasks.
-- If one behavior alone is above 10 minutes: write no file. Name the behavior, say that a task is 10 minutes at most, and ask the human partner to split the behavior in the spec.
+- A task is one feature: behaviors that a user uses together, and that can be tested from end to end. Never make one task per behavior: the developer does one Red-Green-Refactor cycle per behavior inside the task.
+- All the behaviors of the spec go in one task, except in these two cases:
+  - **Independent parts.** Two parts are independent when no part needs the code of the other and they change different files. Each independent part is its own task, and no task depends on another: they are developed at the same time, each in its own worktree.
+  - **Above 60 minutes.** A task is 60 minutes at most for the human partner. Estimate each task: the minutes the human partner would need to write its tests and its code by hand. Above 60 minutes, split the task into tasks that each give a feature that works from end to end. A later task depends on the earlier one.
+- If one behavior alone is above 60 minutes: write no file. Name the behavior, say that a task is 60 minutes at most, and ask the human partner to split the behavior in the spec.
 - Every behavior of the spec (`B1`, `B2`, ...) is in exactly one task.
 - Task ids are `T1`, `T2`, ... in the order of development.
 - A task depends on another task only when it needs code that the other task writes. No cycle.
@@ -33,6 +35,9 @@ One file per task, `specs/<feature>/tasks/<id>.md`, in exactly this format:
 ## Behaviors
 <the lines of the spec this task covers, copied: `- B1: ...`>
 
+## Acceptance criteria
+- A1: <one use of the whole feature from end to end, the way its user does it: the steps and the result>
+
 ## Tests to write
 - <one test: the input and the expected result>
 
@@ -42,6 +47,8 @@ One file per task, `specs/<feature>/tasks/<id>.md`, in exactly this format:
 ## Depends on
 <task ids separated by commas, or `None`>
 ```
+
+`## Acceptance criteria` holds 1 to 3 criteria, `A1` to `A3`. Each one uses several behaviors of the task together. The task is done when every criterion gives its result.
 
 ## Step 3 — Create the progress file
 Call `progress_create` with:
