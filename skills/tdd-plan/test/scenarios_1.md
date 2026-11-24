@@ -1,4 +1,4 @@
-# Scenario 1: Happy path, an approved spec becomes tasks and a progress file, with tests of behavior only
+# Scenario 1: Happy path, an approved spec of one feature becomes one task and a progress file, with tests of behavior only
 
 ## Prompt
 Plan the feature `cart`.
@@ -32,14 +32,13 @@ Add a class `Cart` to `cart.py`. It holds items with a price and computes the to
 ````
 
 ## Pass criteria
-- [ ] `python3 mcp-servers/tdd-progress/progress.py status cart --json` exits with code 0, and its output shows `"status": "open"`, at least 2 tasks under `new`, and 0 task under `dev`, `review` and `done`.
+- [ ] `python3 mcp-servers/tdd-progress/progress.py status cart --json` exits with code 0, and its output shows `"status": "open"`, exactly 1 task under `new`, and 0 task under `dev`, `review` and `done` (`B1` to `B4` all build the class `Cart`: they are one feature, so one task).
 - [ ] `specs/cart/progress.json` is byte-identical to its own content written again with `json.dumps(data, indent=2) + "\n"`, and every task in it has exactly the keys `id`, `title`, `file`, `depends_on`, `status`, `rejections` and `note` (this is the layout the tool writes).
 - [ ] In `specs/cart/progress.json`, `test_command` is exactly `python3 -m unittest discover -s tests`.
 - [ ] For every task of `progress.json`, the file `specs/cart/<file>` exists and contains the headings `## Goal`, `## Behaviors`, `## Tests to write` and `## Depends on`, in this order.
 - [ ] Each of `B1`, `B2`, `B3`, `B4`, `B5` and `B6` appears in the `## Behaviors` section of exactly one task file.
 - [ ] In every task file, the section `## Tests to write` has at least one line that starts with `- `, and each of these lines contains the text `total` or the text `apply_discount` (every test gives an input to the class and checks the result; `B5` and `B6` have no task of their own).
 - [ ] No section `## Tests to write` contains one of these texts, in any letter case: `make test`, `makefile`, `docstring`, `__doc__`, `type hint`, `annotation` (no test is planned for the build system or for a convention).
-- [ ] The task that holds `B3` is the task that holds `B2`, or depends on it in `progress.json` (directly or through other tasks).
 - [ ] In each task file, the task ids (`T<number>`) named in the `## Depends on` section are exactly the ids of its `depends_on` in `progress.json`.
 - [ ] `specs/cart/spec.md` has the exact Setup content. `specs/cart/` contains only `spec.md`, `progress.json` and the `tasks/*.md` files. Outside `specs/cart/`, no file exists other than `mcp-servers/tdd-progress/progress.py` (no code, no test and no temporary file were written).
 - [ ] The final output contains the text `tdd-implement`.
@@ -47,3 +46,4 @@ Add a class `Cart` to `cart.py`. It holds items with a price and computes the to
 ## RED baseline (without the skill)
 2026-11-21 — FAIL (3 of 3 runs failed) — all 3 found `progress.py` in the project and created `progress.json` with it, so the 3 tool criteria passed. All 3 failed on the task files: each run invented its own layout (Red/Green/Refactor steps, no `## Behaviors`, `## Tests to write` or `## Depends on` heading), so no behavior could be matched to a task. No run named the next step `tdd-implement`.
 2026-11-22 — FAIL (3 of 3 runs failed) — with the skill as it was before the rule on the tests of behavior only, on the new spec (`B5` and `B6`). The 3 runs planned 6 tasks: `T5` "Make test command" for `B5` alone and `T6` "Docstrings and type hints" for `B6` alone, each with its tests ("Run `make test`: the exit code is 0 and the output shows the tests of `tests/` ran", "For each method of `Cart`, `__doc__` is not empty and `__annotations__` is not empty"). The other criteria passed.
+2026-11-24 — FAIL (3 of 3 runs failed) — with the skill as it was before the tasks of one feature (a task was 10 minutes at most). The 3 runs planned 2, 3 and 3 tasks for `B1` to `B4`, which all build the class `Cart`. The other criteria passed.
