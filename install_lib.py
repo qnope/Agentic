@@ -8,6 +8,8 @@ A part brings the parts of this repository that its text names by path: `skills/
 An MCP server that has a `requirements.txt` gets its own Python environment, `mcp-servers/<name>/.venv`,
 with these requirements installed in it. The tool starts the server with the Python of this environment.
 Git ignores what the install wrote: the install adds these paths to a block of the `.gitignore` of the project.
+A new install removes from an installed folder (a skill or a server) the files that the part no longer has.
+It removes only files that an install wrote: the record `.agentic-installed` of the folder lists them.
 """
 import argparse
 import json
@@ -35,6 +37,9 @@ NAMED = {"skill": r"skills/([\w-]+)/SKILL\.md", "agent": r"agents/([\w-]+)\.md",
 IGNORE_START = "# >>> Agentic: paths written by install_claude.py and install_cursor.py >>>"
 IGNORE_END = "# <<< Agentic <<<"
 IGNORE_BLOCK = re.compile(r"^# >>> Agentic\b[^\n]*\n(.*?)^# <<< Agentic <<<[^\n]*\n?", re.M | re.S)
+
+# The record of an installed folder: the files that the last install wrote in it, one path on each line.
+RECORD = ".agentic-installed"
 
 # The Python of an environment, from the folder of the environment.
 PYTHON = Path("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -236,6 +241,31 @@ def write(project, path, content, same):
     return state
 
 
+def prune(project, folder, names):
+    """Remove from an installed folder the files that the last install wrote and that the part no longer has.
+
+    `names` are the files of the part now. The record of the folder lists the files that the last install wrote.
+    A file that no install wrote stays: the Python environment, a cache, a file of the user. A folder that a
+    removal leaves empty goes too. Then the record lists `names`. Yield one line for each removed file.
+    """
+    root = project / folder
+    record = root / RECORD
+    old = record.read_text().splitlines() if record.exists() else []
+    for name in sorted(set(old) - set(names)):
+        path = root / name
+        if root.resolve() not in path.resolve().parents or not path.is_file():
+            continue
+        path.unlink()
+        yield f"removed {folder}{name}"
+        for parent in path.parents:
+            if parent == root or any(parent.iterdir()):
+                break
+            parent.rmdir()
+    if old != names:
+        root.mkdir(parents=True, exist_ok=True)
+        record.write_text("".join(f"{name}\n" for name in names))
+
+
 def ignore(project, paths):
     """Make git ignore paths of the project: add them to the block of the install in its `.gitignore`.
 
@@ -289,6 +319,9 @@ def install(tool, source, project, wanted, run=subprocess.run):
     files, configs, servers, ignored = plan(tool, source, project, parts)
     with tempfile.TemporaryDirectory() as empty:  # What the install writes in the config files of an empty project.
         alone = plan(tool, source, Path(empty), parts)[1]
+    # The folders that git must ignore are the copies of a skill or a server: the install owns them.
+    for folder in [line[1:] for line in ignored if line.endswith("/")]:
+        yield from prune(project, folder, sorted(path[len(folder):] for path in files if path.startswith(folder)))
     for path, content in files.items():
         yield f"{write(project, path, content, content.__eq__)} {path}"
     for path, value in configs.items():
