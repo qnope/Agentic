@@ -10,6 +10,7 @@ with these requirements installed in it. The tool starts the server with the Pyt
 Git ignores what the install wrote: the install adds these paths to a block of the `.gitignore` of the project.
 A new install removes from an installed folder (a skill or a server) the files that the part no longer has.
 It removes only files that an install wrote: the record `.agentic-installed` of the folder lists them.
+An installed part that this repository no longer has, for example after a rename, is not touched: the install says so.
 """
 import argparse
 import json
@@ -37,6 +38,9 @@ NAMED = {"skill": r"skills/([\w-]+)/SKILL\.md", "agent": r"agents/([\w-]+)\.md",
 IGNORE_START = "# >>> Agentic: paths written by install_claude.py and install_cursor.py >>>"
 IGNORE_END = "# <<< Agentic <<<"
 IGNORE_BLOCK = re.compile(r"^# >>> Agentic\b[^\n]*\n(.*?)^# <<< Agentic <<<[^\n]*\n?", re.M | re.S)
+# How a line of the block names an installed part.
+INSTALLED = {"skill": r"/\.(?:claude|cursor)/skills/([\w-]+)/", "agent": r"/\.(?:claude|cursor)/agents/([\w-]+)\.md",
+             "hook": r"/(?:\.cursor/)?hooks/([\w-]+)\.py", "mcp-server": r"/mcp-servers/([\w-]+)/"}
 
 # The record of an installed folder: the files that the last install wrote in it, one path on each line.
 RECORD = ".agentic-installed"
@@ -287,6 +291,18 @@ def ignore(project, paths):
     return write(project, ".gitignore", content, content.__eq__), lines
 
 
+def not_touched(source, project, lines):
+    """Yield one line for each installed part that this repository no longer has, for example after a rename.
+
+    `lines` are the lines of the block of `.gitignore`. A path that is no longer in the project is not named.
+    """
+    for line in lines:
+        for kind, pattern in INSTALLED.items():
+            found = re.fullmatch(pattern, line)
+            if found and not find(source, kind, found[1]) and (project / line[1:]).exists():
+                yield f"not touched {line[1:]}: this repository has no {kind} '{found[1]}'"
+
+
 def environment(folder, run):
     """Give a server folder its Python environment `.venv`, with its requirements installed.
 
@@ -334,6 +350,7 @@ def install(tool, source, project, wanted, run=subprocess.run):
     for path in configs:
         if f"/{path}" not in lines:
             yield f"not ignored {path}: it holds settings that the install did not write"
+    yield from not_touched(source, project, lines)
     for name in servers:
         yield f"{environment(project / 'mcp-servers' / name, run)} mcp-servers/{name}/.venv"
 

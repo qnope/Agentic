@@ -229,7 +229,11 @@ class UpdateTest(Base):
         (self.source / "agents/worker.md").rename(self.source / "agents/helper.md")
         shutil.rmtree(self.source / "skills/build")
         shutil.rmtree(self.source / "mcp-servers/tracker")
-        before = {path: (self.project / path).read_bytes() for path in self.files()}
+        def others():
+            """The installed files of the parts other than `skill/plan`, that the next install does not write."""
+            return {path: (self.project / path).read_bytes() for path in self.files()
+                    if not path.startswith(".claude/skills/plan/")}
+        before = others()
         code, out, _ = self.install("claude", "skill/plan")
         self.assertEqual(code, 0)
         self.assertEqual([line for line in out.splitlines() if line.startswith("not touched")], [
@@ -239,7 +243,7 @@ class UpdateTest(Base):
             "not touched hooks/gate.py: this repository has no hook 'gate'",
             "not touched mcp-servers/tracker/: this repository has no mcp-server 'tracker'",
         ])
-        self.assertEqual({path: (self.project / path).read_bytes() for path in self.files()}, before)
+        self.assertEqual(others(), before)
         shutil.rmtree(self.project / "mcp-servers/tracker")  # A part deleted by hand is not named again.
         self.assertNotIn("tracker", self.install("claude", "skill/plan")[1])
 
