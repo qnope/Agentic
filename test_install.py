@@ -137,6 +137,12 @@ class ClaudeTest(Base):
         (self.source / "agents/other.md").write_text("new text")
         self.assertIn("updated .claude/agents/other.md", self.install("claude", "agent/other")[1])
         self.assertEqual((self.project / ".claude/agents/other.md").read_text(), "new text")
+        self.install("claude", "skill/plan")
+        (self.source / "skills/plan/Steps.md").write_text("new steps")  # A reference file of a skill.
+        out = self.install("claude", "skill/plan")[1].splitlines()
+        self.assertIn("updated .claude/skills/plan/Steps.md", out)
+        self.assertIn("unchanged .claude/skills/plan/SKILL.md", out)
+        self.assertEqual((self.project / ".claude/skills/plan/Steps.md").read_text(), "new steps")
 
     def test_unknown_part_installs_nothing_and_lists_the_names(self):
         code, _, err = self.install("claude", "agent/other", "skill/nope")
@@ -215,6 +221,27 @@ class UpdateTest(Base):
         for path in mine:
             self.assertEqual((self.project / path).read_text(), "mine")
         self.assertTrue((self.project / "mcp-servers/tracker/.venv" / install_lib.PYTHON).exists())
+
+    def test_installed_part_that_the_repository_no_longer_has_is_not_touched(self):
+        self.install("claude", "workflow/loop")
+        self.install("cursor", "hook/gate")
+        (self.source / "hooks/gate.py").rename(self.source / "hooks/check.py")
+        (self.source / "agents/worker.md").rename(self.source / "agents/helper.md")
+        shutil.rmtree(self.source / "skills/build")
+        shutil.rmtree(self.source / "mcp-servers/tracker")
+        before = {path: (self.project / path).read_bytes() for path in self.files()}
+        code, out, _ = self.install("claude", "skill/plan")
+        self.assertEqual(code, 0)
+        self.assertEqual([line for line in out.splitlines() if line.startswith("not touched")], [
+            "not touched .claude/agents/worker.md: this repository has no agent 'worker'",
+            "not touched .claude/skills/build/: this repository has no skill 'build'",
+            "not touched .cursor/hooks/gate.py: this repository has no hook 'gate'",
+            "not touched hooks/gate.py: this repository has no hook 'gate'",
+            "not touched mcp-servers/tracker/: this repository has no mcp-server 'tracker'",
+        ])
+        self.assertEqual({path: (self.project / path).read_bytes() for path in self.files()}, before)
+        shutil.rmtree(self.project / "mcp-servers/tracker")  # A part deleted by hand is not named again.
+        self.assertNotIn("tracker", self.install("claude", "skill/plan")[1])
 
 
 class CursorTest(Base):
