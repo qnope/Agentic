@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,8 @@ HOOK = """import sys
 print("FAIL: not finished", file=sys.stderr)
 sys.exit(0 if '"stop_hook_active": true' in sys.stdin.read() else 2)
 """
+# The record of an installed folder: the files that the last install wrote in it.
+RECORD = ".agentic-installed"
 
 
 class FakeRun:
@@ -72,9 +75,9 @@ class Base(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def files(self):
-        """The files of the project, without the Python environments."""
+        """The files of the project, without the Python environments and the records of the installed folders."""
         return sorted(str(p.relative_to(self.project)) for p in self.project.rglob("*")
-                      if p.is_file() and ".venv" not in p.parts)
+                      if p.is_file() and ".venv" not in p.parts and p.name != RECORD)
 
     def json(self, path):
         return json.loads((self.project / path).read_text())
@@ -134,6 +137,12 @@ class ClaudeTest(Base):
         (self.source / "agents/other.md").write_text("new text")
         self.assertIn("updated .claude/agents/other.md", self.install("claude", "agent/other")[1])
         self.assertEqual((self.project / ".claude/agents/other.md").read_text(), "new text")
+        self.install("claude", "skill/plan")
+        (self.source / "skills/plan/Steps.md").write_text("new steps")  # A reference file of a skill.
+        out = self.install("claude", "skill/plan")[1].splitlines()
+        self.assertIn("updated .claude/skills/plan/Steps.md", out)
+        self.assertIn("unchanged .claude/skills/plan/SKILL.md", out)
+        self.assertEqual((self.project / ".claude/skills/plan/Steps.md").read_text(), "new steps")
 
     def test_unknown_part_installs_nothing_and_lists_the_names(self):
         code, _, err = self.install("claude", "agent/other", "skill/nope")
@@ -176,6 +185,67 @@ class ClaudeTest(Base):
         self.assertIn("unchanged hooks/gate.py", out)
         self.assertEqual((self.source / "hooks/gate.py").read_text(), HOOK)
         self.assertTrue((self.source / ".claude/skills/plan/SKILL.md").exists())
+        self.assertFalse((self.source / "mcp-servers/tracker" / RECORD).exists())
+
+
+class UpdateTest(Base):
+    def test_new_install_removes_the_files_that_the_part_no_longer_has(self):
+        (self.source / "skills/plan/refs").mkdir()
+        (self.source / "skills/plan/refs/old.md").write_text("old")
+        self.install("claude", "skill/plan")
+        (self.source / "skills/plan/Steps.md").rename(self.source / "skills/plan/Stages.md")
+        shutil.rmtree(self.source / "skills/plan/refs")
+        (self.source / "mcp-servers/tracker/tool.py").unlink()
+        code, out, _ = self.install("claude", "skill/plan")
+        self.assertEqual(code, 0)
+        for line in ("removed .claude/skills/plan/Steps.md", "removed .claude/skills/plan/refs/old.md",
+                     "created .claude/skills/plan/Stages.md", "removed mcp-servers/tracker/tool.py"):
+            self.assertIn(line, out.splitlines())
+        self.assertEqual(self.files(), [
+            ".claude/agents/worker.md", ".claude/skills/plan/SKILL.md", ".claude/skills/plan/Stages.md", ".gitignore",
+            ".mcp.json", "mcp-servers/tracker/requirements.txt", "mcp-servers/tracker/server.py",
+        ])
+        self.assertFalse((self.project / ".claude/skills/plan/refs").exists())
+
+    def test_new_install_removes_only_the_files_that_an_install_wrote(self):
+        self.install("claude", "skill/plan")
+        mine = [".claude/skills/plan/notes.md", "mcp-servers/tracker/data.json", ".claude/agents/mine.md"]
+        for path in mine:
+            (self.project / path).write_text("mine")
+        with open(self.project / ".claude/skills/plan" / RECORD, "a") as file:
+            file.write("../../agents/mine.md\n")  # A record never removes a file outside its folder.
+        (self.source / "skills/plan/Steps.md").unlink()
+        out = self.install("claude", "skill/plan")[1]
+        self.assertEqual([line for line in out.splitlines() if line.startswith("removed")],
+                         ["removed .claude/skills/plan/Steps.md"])
+        for path in mine:
+            self.assertEqual((self.project / path).read_text(), "mine")
+        self.assertTrue((self.project / "mcp-servers/tracker/.venv" / install_lib.PYTHON).exists())
+
+    def test_installed_part_that_the_repository_no_longer_has_is_not_touched(self):
+        self.install("claude", "workflow/loop")
+        self.install("cursor", "hook/gate")
+        (self.source / "hooks/gate.py").rename(self.source / "hooks/check.py")
+        (self.source / "agents/worker.md").rename(self.source / "agents/helper.md")
+        shutil.rmtree(self.source / "skills/build")
+        shutil.rmtree(self.source / "mcp-servers/tracker")
+        def others():
+            """The installed files of the parts other than `skill/plan`, that the next install does not write."""
+            return {path: (self.project / path).read_bytes() for path in self.files()
+                    if not path.startswith(".claude/skills/plan/")}
+        before = others()
+        code, out, _ = self.install("claude", "skill/plan")
+        self.assertEqual(code, 0)
+        self.assertEqual([line for line in out.splitlines() if line.startswith("not touched")], [
+            "not touched .claude/agents/worker.md: this repository has no agent 'worker'",
+            "not touched .claude/skills/build/: this repository has no skill 'build'",
+            "not touched .cursor/hooks/gate.py: this repository has no hook 'gate'",
+            "not touched hooks/gate.py: this repository has no hook 'gate'",
+            "not touched mcp-servers/tracker/: this repository has no mcp-server 'tracker'",
+        ])
+        self.assertEqual(others(), before)
+        shutil.rmtree(self.project / "mcp-servers/tracker")  # A part deleted by hand is not named again.
+        self.assertNotIn("tracker", self.install("claude", "skill/plan")[1])
 
 
 class CursorTest(Base):

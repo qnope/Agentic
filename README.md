@@ -49,7 +49,9 @@ Rules:
 - The tests of a part are not copied (`test/`, `test_*.py`).
 - In the copied skills and agents, the path of an installed skill or agent is rewritten to its place in the project: `agents/tdd-developer.md` becomes `.claude/agents/tdd-developer.md`.
 - In a config file that already exists, the script adds or updates the entry of the part and keeps every other setting. A hook is registered once.
-- You can run the script again, for example after an update of this repository. Each line of its output says `created`, `updated` or `unchanged` for one file or one Python environment.
+- You can run the script again, for example after an update of this repository. Each line of its output says `created`, `updated`, `unchanged` or `removed` for one file or one Python environment.
+- A new install makes each installed file equal to its part again, the reference files of a skill too: a file that changed in this repository is `updated`, and a change made to the copy in the project is lost.
+- A new install removes from an installed skill or server folder the files that the part no longer has, for example a reference file that was deleted or renamed in this repository. The record `.agentic-installed` of the folder lists the files that the last install wrote. The script removes only these files: it never removes a file that it did not write, such as the Python environment `.venv` or a file of yours.
 - If a part is unknown or a config file is not valid JSON, the script writes nothing and exits with code 1.
 
 Git:
@@ -85,6 +87,7 @@ Python environment of an MCP server:
 Limits:
 
 - Every hook is registered as a stop hook: it runs when the agent wants to stop.
+- A part that this repository no longer has, for example after a rename, stays installed and registered: the script does not touch it and prints `not touched <path>`. Example: `not touched hooks/tdd_gate.py: this repository has no hook 'tdd_gate'`. A renamed hook then runs twice, under its old name and its new name. To remove the old part, delete its files, its line in the block of `.gitignore` and its entry in the config files by hand.
 - Cursor does not block a stop with an exit code. The adapter runs the hook and, if the hook blocks, gives its message to Cursor as a follow-up message, so the agent continues. It does this once: after one follow-up the agent is free to stop.
 - For Cursor, the MCP server gets the environment variable `<NAME>_ROOT` (example: `TDD_PROGRESS_ROOT`) set to the workspace folder. A server of this repository reads its project root from this variable.
 - The Cursor files follow the Cursor documentation. They were not tried in Cursor itself.
